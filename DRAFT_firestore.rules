@@ -1,0 +1,174 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // -------------------------------------------------------------------------
+    // Phase 0: Global Safety Net
+    // -------------------------------------------------------------------------
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // Phase 3: Primitive Definitions
+    // -------------------------------------------------------------------------
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isMember(projectId) {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/projects/$(projectId)) &&
+        request.auth.uid in get(/databases/$(database)/documents/projects/$(projectId)).data.members
+      );
+    }
+
+    function isOwner(projectId) {
+      return isSignedIn() && (
+        get(/databases/$(database)/documents/projects/$(projectId)).data.ownerId == request.auth.uid
+      );
+    }
+
+    // -------------------------------------------------------------------------
+    // Entity Validations
+    // -------------------------------------------------------------------------
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'displayName', 'photoURL', 'createdAt']) &&
+             data.keys().size() == 5 &&
+             data.uid == request.auth.uid &&
+             data.email is string && data.email.size() <= 256 &&
+             data.displayName is string && data.displayName.size() <= 100 &&
+             data.photoURL is string && data.photoURL.size() <= 1024 &&
+             data.createdAt == request.time;
+    }
+
+    function isValidProject(data) {
+      return data.keys().hasAll(['name', 'key', 'description', 'ownerId', 'members', 'createdAt']) &&
+             data.keys().size() == 6 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             data.key is string && data.key.size() > 0 && data.key.size() <= 10 &&
+             data.description is string && data.description.size() <= 1000 &&
+             data.ownerId == request.auth.uid &&
+             data.members is list && data.members.size() >= 1 &&
+             data.createdAt == request.time;
+    }
+
+    function isValidIssue(data) {
+      return data.keys().hasAll(['projectId', 'title', 'description', 'status', 'priority', 'reporterId', 'assigneeId', 'order', 'createdAt', 'updatedAt']) &&
+             data.keys().size() == 10 &&
+             data.projectId is string && isValidId(data.projectId) &&
+             data.title is string && data.title.size() > 0 && data.title.size() <= 200 &&
+             data.description is string && data.description.size() <= 5000 &&
+             data.status in ['TODO', 'IN_PROGRESS', 'TESTING', 'DONE'] &&
+             data.priority in ['LOW', 'MEDIUM', 'HIGH', 'URGENT'] &&
+             data.reporterId == request.auth.uid &&
+             (data.assigneeId == null || (data.assigneeId is string && isValidId(data.assigneeId))) &&
+             data.order is int &&
+             data.createdAt == request.time &&
+             data.updatedAt == request.time;
+    }
+
+    function isValidComment(data) {
+      return data.keys().hasAll(['issueId', 'authorId', 'content', 'createdAt']) &&
+             data.keys().size() == 4 &&
+             data.issueId is string && isValidId(data.issueId) &&
+             data.authorId == request.auth.uid &&
+             data.content is string && data.content.size() > 0 && data.content.size() <= 2000 &&
+             data.createdAt == request.time;
+    }
+
+    function isValidActivity(data) {
+      return data.keys().hasAll(['projectId', 'userId', 'type', 'issueId', 'oldValue', 'newValue', 'createdAt']) &&
+             data.keys().size() == 7 &&
+             data.projectId is string && isValidId(data.projectId) &&
+             data.userId == request.auth.uid &&
+             data.type in ['ISSUE_CREATED', 'STATUS_CHANGED', 'ASSIGNEE_CHANGED', 'COMMENT_ADDED'] &&
+             data.createdAt == request.time;
+    }
+
+    function isValidMessage(data) {
+      return data.keys().hasAll(['projectId', 'senderId', 'content', 'createdAt']) &&
+             data.keys().size() == 4 &&
+             data.projectId is string && isValidId(data.projectId) &&
+             data.senderId == request.auth.uid &&
+             data.content is string && data.content.size() > 0 && data.content.size() <= 2000 &&
+             data.createdAt == request.time;
+    }
+
+    // -------------------------------------------------------------------------
+    // Collection Matches
+    // -------------------------------------------------------------------------
+
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && userId == request.auth.uid && isValidUser(incoming());
+      allow update: if isSignedIn() && userId == request.auth.uid && 
+                       incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL']) &&
+                       incoming().displayName is string && incoming().displayName.size() <= 100;
+    }
+
+    match /projects/{projectId} {
+      allow read: if isSignedIn() && (request.auth.uid in resource.data.members || resource.data.ownerId == request.auth.uid);
+      allow create: if isSignedIn() && isValidProject(incoming());
+      allow update: if isOwner(projectId) && (
+        incoming().diff(existing()).affectedKeys().hasOnly(['name', 'description', 'members']) ||
+        // Allow adding members if you're a member? No, only owner for simplicity unless specified
+        isOwner(projectId)
+      );
+      allow delete: if isOwner(projectId);
+
+      match /issues/{issueId} {
+        allow read: if isMember(projectId);
+        allow create: if isMember(projectId) && isValidIssue(incoming()) && incoming().projectId == projectId;
+        allow update: if isMember(projectId) && 
+                         incoming().projectId == existing().projectId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().updatedAt == request.time &&
+                         (
+                           incoming().diff(existing()).affectedKeys().hasOnly(['status', 'priority', 'assigneeId', 'title', 'description', 'order', 'updatedAt'])
+                         );
+        allow delete: if isMember(projectId);
+
+        match /comments/{commentId} {
+          allow read: if isMember(projectId);
+          allow create: if isMember(projectId) && isValidComment(incoming());
+          allow update: if isMember(projectId) && resource.data.authorId == request.auth.uid && 
+                           incoming().diff(existing()).affectedKeys().hasOnly(['content']) &&
+                           incoming().content is string && incoming().content.size() > 0;
+          allow delete: if isMember(projectId) && (resource.data.authorId == request.auth.uid || isOwner(projectId));
+        }
+      }
+
+      match /activities/{activityId} {
+        allow read: if isMember(projectId);
+        allow create: if isMember(projectId) && isValidActivity(incoming()) && incoming().projectId == projectId;
+        // Activities are immutable logs
+        allow update, delete: if false;
+      }
+
+      match /messages/{messageId} {
+        allow read: if isMember(projectId);
+        allow create: if isMember(projectId) && isValidMessage(incoming()) && incoming().projectId == projectId;
+        // Messages are immutable logs
+        allow update, delete: if false;
+      }
+    }
+
+    match /admins/{adminId} {
+      allow read: if isSignedIn();
+    }
+  }
+}
