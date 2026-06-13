@@ -44,6 +44,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId, issues, onI
   const { userProfile } = useAuth();
   const [activeIssue, setActiveIssue] = React.useState<Issue | null>(null);
   const [groupBy, setGroupBy] = useState<'status' | 'assignee' | 'priority'>('status');
+  const [activeMobileColumn, setActiveMobileColumn] = useState<IssueStatus>('TODO');
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -179,19 +180,49 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId, issues, onI
   return (
     <div className="space-y-4 h-full flex flex-col">
       {/* Board Controls */}
-      <div className="flex items-center gap-2 bg-white p-2.5 rounded-lg border border-gray-100 shadow-sm self-start">
-        <Columns size={14} className="text-gray-400" />
-        <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">Group By:</span>
-        <Select value={groupBy} onValueChange={(v) => setGroupBy(v as any)}>
-          <SelectTrigger className="border-none bg-gray-50 shadow-none h-8 text-xs font-bold w-32 uppercase text-gray-700">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="status" className="uppercase text-xs font-bold">Status</SelectItem>
-            <SelectItem value="assignee" className="uppercase text-xs font-bold">Assignee</SelectItem>
-            <SelectItem value="priority" className="uppercase text-xs font-bold">Priority</SelectItem>
-          </SelectContent>
-        </Select>
+      <div className="flex flex-col sm:flex-row gap-3 sm:items-center justify-between">
+        <div className="flex items-center gap-2 bg-white p-2.5 rounded-lg border border-gray-100 shadow-sm self-start">
+          <Columns size={14} className="text-gray-400" />
+          <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">Group By:</span>
+          <Select value={groupBy} onValueChange={(v) => setGroupBy(v as any)}>
+            <SelectTrigger className="border-none bg-gray-50 shadow-none h-8 text-xs font-bold w-32 uppercase text-gray-700">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="status" className="uppercase text-xs font-bold">Status</SelectItem>
+              <SelectItem value="assignee" className="uppercase text-xs font-bold">Assignee</SelectItem>
+              <SelectItem value="priority" className="uppercase text-xs font-bold">Priority</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Mobile Column Tabs Switcher */}
+        {groupBy === 'status' && (
+          <div className="flex md:hidden bg-muted p-1 rounded-lg w-full justify-between items-center gap-1 shadow-inner">
+            {COLUMNS.map((col) => {
+              const colIssues = issues.filter((i) => i.status === col.id);
+              const isActive = activeMobileColumn === col.id;
+              return (
+                <button
+                  key={col.id}
+                  onClick={() => setActiveMobileColumn(col.id)}
+                  className={`flex-1 text-center py-1.5 text-[10px] font-extrabold rounded-md transition-all ${
+                    isActive
+                      ? 'bg-white text-[#0052CC] shadow-sm'
+                      : 'text-gray-400 hover:text-gray-600'
+                  }`}
+                >
+                  <span className="block leading-tight">{col.title}</span>
+                  <span className={`inline-block mt-0.5 text-[8px] font-extrabold px-1.5 py-0.2 bg-gray-200 text-gray-600 rounded-full ${
+                    isActive ? 'bg-blue-100 text-blue-800' : ''
+                  }`}>
+                    {colIssues.length}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Board Layout */}
@@ -207,91 +238,131 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId, issues, onI
             /* Standard Column view */
             <div className="flex gap-4 h-full overflow-x-auto pb-4 custom-scrollbar">
               {COLUMNS.map((col) => (
-                <KanbanColumn
+                <div
                   key={col.id}
-                  id={col.id}
-                  title={col.title}
-                  issueIds={issues.filter((i) => i.status === col.id).map((i) => i.id)}
+                  className={`w-full md:w-auto shrink-0 ${
+                    activeMobileColumn === col.id ? 'block' : 'hidden md:block'
+                  }`}
                 >
-                  <SortableContext
-                    items={issues.filter((i) => i.status === col.id).map((i) => i.id)}
-                    strategy={verticalListSortingStrategy}
+                  <KanbanColumn
+                    id={col.id}
+                    title={col.title}
+                    issueIds={issues.filter((i) => i.status === col.id).map((i) => i.id)}
                   >
-                    <div className="flex flex-col gap-3 min-h-[100px]">
-                      {issues
-                        .filter((i) => i.status === col.id)
-                        .map((issue) => (
-                          <KanbanCard 
-                            key={issue.id} 
-                            issue={issue} 
-                            onClick={() => onIssueClick?.(issue)}
-                            assignee={members.find(m => m.uid === issue.assigneeId)}
-                            projectKey={projectKey}
-                          />
-                        ))}
-                    </div>
-                  </SortableContext>
-                </KanbanColumn>
+                    <SortableContext
+                      items={issues.filter((i) => i.status === col.id).map((i) => i.id)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <div className="flex flex-col gap-3 min-h-[100px]">
+                        {issues
+                          .filter((i) => i.status === col.id)
+                          .map((issue) => (
+                            <KanbanCard 
+                              key={issue.id} 
+                              issue={issue} 
+                              onClick={() => onIssueClick?.(issue)}
+                              assignee={members.find(m => m.uid === issue.assigneeId)}
+                              projectKey={projectKey}
+                            />
+                          ))}
+                      </div>
+                    </SortableContext>
+                  </KanbanColumn>
+                </div>
               ))}
             </div>
           ) : (
             /* Swimlane Rows view */
-            <div className="space-y-8 pb-8 min-w-[1150px]">
-              {/* Header column labels */}
-              <div className="flex gap-4 pl-2">
-                {COLUMNS.map(col => (
-                  <div key={col.id} className="w-72 shrink-0 border-b pb-2">
-                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{col.title}</span>
+            <>
+              {/* Desktop Swimlane Rows view */}
+              <div className="hidden md:block space-y-8 pb-8 min-w-[1150px]">
+                {/* Header column labels */}
+                <div className="flex gap-4 pl-2">
+                  {COLUMNS.map(col => (
+                    <div key={col.id} className="w-72 shrink-0 border-b pb-2">
+                      <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{col.title}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Rows */}
+                {swimlanes.map((lane) => (
+                  <div key={lane.id} className="space-y-2.5">
+                    <div className="flex items-center gap-2.5 px-2 py-1.5 bg-gray-50 rounded-lg border border-gray-100 self-start text-[11px] font-bold uppercase tracking-wider text-gray-600">
+                      {lane.avatar}
+                      <span>{lane.title}</span>
+                      <Badge className="bg-gray-200 text-gray-500 font-bold hover:bg-gray-200 h-5 text-[10px] min-w-5 justify-center border-none">
+                        {lane.issues.length}
+                      </Badge>
+                    </div>
+
+                    <div className="flex gap-4">
+                      {COLUMNS.map((col) => {
+                        const laneColId = `${lane.id}__${col.id}`;
+                        const colIssues = lane.issues.filter(i => i.status === col.id);
+                        return (
+                          <KanbanColumn
+                            key={laneColId}
+                            id={laneColId}
+                            title={col.title}
+                            issueIds={colIssues.map((i) => i.id)}
+                            hideHeader
+                          >
+                            <SortableContext
+                              items={colIssues.map((i) => i.id)}
+                              strategy={verticalListSortingStrategy}
+                            >
+                              <div className="flex flex-col gap-2.5 min-h-[70px]">
+                                {colIssues.map((issue) => (
+                                  <KanbanCard 
+                                    key={issue.id} 
+                                    issue={issue} 
+                                    onClick={() => onIssueClick?.(issue)}
+                                    assignee={members.find(m => m.uid === issue.assigneeId)}
+                                    projectKey={projectKey}
+                                  />
+                                ))}
+                              </div>
+                            </SortableContext>
+                          </KanbanColumn>
+                        );
+                      })}
+                    </div>
                   </div>
                 ))}
               </div>
 
-              {/* Rows */}
-              {swimlanes.map((lane) => (
-                <div key={lane.id} className="space-y-2.5">
-                  <div className="flex items-center gap-2.5 px-2 py-1.5 bg-gray-50 rounded-lg border border-gray-100 self-start text-[11px] font-bold uppercase tracking-wider text-gray-600">
-                    {lane.avatar}
-                    <span>{lane.title}</span>
-                    <Badge className="bg-gray-200 text-gray-500 font-bold hover:bg-gray-200 h-5 text-[10px] min-w-5 justify-center border-none">
-                      {lane.issues.length}
-                    </Badge>
-                  </div>
+              {/* Mobile Swimlane View */}
+              <div className="md:hidden space-y-6 pb-8">
+                {swimlanes.map((lane) => (
+                  <div key={lane.id} className="space-y-3 p-3 bg-gray-50/50 border border-gray-100 rounded-xl">
+                    <div className="flex items-center gap-2.5 px-2 py-1.5 bg-white rounded-lg border border-gray-100 self-start text-[11px] font-bold uppercase tracking-wider text-gray-600 shadow-sm w-fit">
+                      {lane.avatar}
+                      <span>{lane.title}</span>
+                      <Badge className="bg-gray-100 text-gray-500 font-bold hover:bg-gray-200 h-5 text-[10px] min-w-5 justify-center border-none">
+                        {lane.issues.length}
+                      </Badge>
+                    </div>
 
-                  <div className="flex gap-4">
-                    {COLUMNS.map((col) => {
-                      const laneColId = `${lane.id}__${col.id}`;
-                      const colIssues = lane.issues.filter(i => i.status === col.id);
-                      return (
-                        <KanbanColumn
-                          key={laneColId}
-                          id={laneColId}
-                          title={col.title}
-                          issueIds={colIssues.map((i) => i.id)}
-                          hideHeader
-                        >
-                          <SortableContext
-                            items={colIssues.map((i) => i.id)}
-                            strategy={verticalListSortingStrategy}
-                          >
-                            <div className="flex flex-col gap-2.5 min-h-[70px]">
-                              {colIssues.map((issue) => (
-                                <KanbanCard 
-                                  key={issue.id} 
-                                  issue={issue} 
-                                  onClick={() => onIssueClick?.(issue)}
-                                  assignee={members.find(m => m.uid === issue.assigneeId)}
-                                  projectKey={projectKey}
-                                />
-                              ))}
-                            </div>
-                          </SortableContext>
-                        </KanbanColumn>
-                      );
-                    })}
+                    <div className="space-y-3">
+                      {lane.issues.map((issue) => (
+                        <KanbanCard 
+                          key={issue.id} 
+                          issue={issue} 
+                          onClick={() => onIssueClick?.(issue)}
+                          assignee={members.find(m => m.uid === issue.assigneeId)}
+                          projectKey={projectKey}
+                          showStatus
+                        />
+                      ))}
+                      {lane.issues.length === 0 && (
+                        <p className="py-4 text-center text-xs text-gray-400 italic">No tasks in this lane.</p>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            </>
           )}
 
           {/* Drag Overlay */}

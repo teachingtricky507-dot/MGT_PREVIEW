@@ -287,7 +287,7 @@ export const IssueModal: React.FC<IssueModalProps> = ({ issue, isOpen, onClose, 
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl h-[85vh] flex flex-col p-0 overflow-hidden bg-white">
+      <DialogContent className="max-w-4xl w-[95vw] sm:w-full h-[90vh] sm:h-[85vh] flex flex-col p-0 overflow-hidden bg-white">
         <DialogHeader className="p-6 pb-2 shrink-0">
           <div className="flex items-center gap-2 text-xs text-gray-500 uppercase tracking-widest mb-2">
             <span className="font-bold text-[#0052CC]">{project?.key || 'PROJ'}-{issue.issueIndex || 1}</span>
@@ -315,9 +315,9 @@ export const IssueModal: React.FC<IssueModalProps> = ({ issue, isOpen, onClose, 
           )}
         </DialogHeader>
 
-        <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
           {/* Main Info */}
-          <div className="flex-1 p-6 overflow-y-auto custom-scrollbar">
+          <div className="flex-1 p-4 md:p-6 overflow-y-auto custom-scrollbar">
             <div className="space-y-6">
               <section>
                 <div className="flex items-center justify-between mb-3">
@@ -560,7 +560,7 @@ export const IssueModal: React.FC<IssueModalProps> = ({ issue, isOpen, onClose, 
           </div>
 
           {/* Sidebar Info */}
-          <div className="w-80 border-l bg-[#F4F5F7]/50 p-6 space-y-6 shrink-0 overflow-y-auto custom-scrollbar">
+          <div className="w-full md:w-80 border-t md:border-t-0 md:border-l bg-[#F4F5F7]/50 p-4 md:p-6 space-y-6 shrink-0 md:shrink-0 overflow-y-auto custom-scrollbar">
             <div className="space-y-4">
               <div>
                 <Label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5 block">Status</Label>

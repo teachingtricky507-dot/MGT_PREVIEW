@@ -50,10 +50,10 @@ export const ProjectChat: React.FC<ProjectChatProps> = ({ projectId, members, is
     <AnimatePresence>
       {isOpen && (
         <motion.div
-          initial={{ x: 300, opacity: 0 }}
+          initial={{ x: '100%', opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
-          exit={{ x: 300, opacity: 0 }}
-          className="fixed right-0 top-0 bottom-0 w-80 bg-white shadow-2xl z-50 flex flex-col border-l border-gray-100"
+          exit={{ x: '100%', opacity: 0 }}
+          className="fixed right-0 top-0 bottom-0 w-full sm:w-80 bg-white shadow-2xl z-50 flex flex-col border-l border-gray-100"
         >
           {/* Header */}
           <div className="p-4 border-b border-gray-50 flex items-center justify-between bg-white/50 backdrop-blur-md sticky top-0">

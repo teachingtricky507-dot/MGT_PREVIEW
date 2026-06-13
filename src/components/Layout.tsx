@@ -54,9 +54,39 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
     { name: 'Settings', icon: Settings, path: '/settings' },
   ];
 
+  // Auto-collapse sidebar on mobile screens (less than 768px) on load or resize
+  React.useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 768) {
+        setIsSidebarOpen(false);
+      } else {
+        setIsSidebarOpen(true);
+      }
+    };
+    handleResize(); // run once on mount
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Auto-collapse sidebar on path transition (route change) when on mobile
+  React.useEffect(() => {
+    if (window.innerWidth < 768) {
+      setIsSidebarOpen(false);
+    }
+  }, [location.pathname]);
+
   return (
     <div className="flex h-screen bg-background text-foreground overflow-hidden font-sans">
       <CommandMenu />
+      
+      {/* Sidebar Overlay Backdrop for Mobile */}
+      {isSidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/60 z-40 md:hidden backdrop-blur-[2px] transition-opacity duration-300"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
       <AnimatePresence mode="wait">
         {isSidebarOpen && (
@@ -64,7 +94,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             initial={{ width: 0, opacity: 0 }}
             animate={{ width: 240, opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
-            className="bg-[#171717] text-white flex flex-col z-50 shrink-0 border-r border-[#262626]"
+            className="bg-[#171717] text-white flex flex-col z-50 shrink-0 border-r border-[#262626] fixed md:relative top-0 bottom-0 left-0 h-full shadow-2xl md:shadow-none"
           >
             {/* Workspace Header */}
             <div className="p-4 flex items-center justify-between">
@@ -149,7 +179,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="h-12 bg-background/50 backdrop-blur-md border-b flex items-center justify-between px-6 shrink-0 z-10 sticky top-0">
+        <header className="h-12 bg-background/50 backdrop-blur-md border-b flex items-center justify-between px-4 md:px-6 shrink-0 z-10 sticky top-0">
           <div className="flex items-center gap-4">
             <button
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
@@ -157,8 +187,8 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             >
               <Menu size={18} />
             </button>
-            <div className="h-4 w-px bg-gray-200" />
-            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-gray-400">
+            <div className="h-4 w-px bg-gray-200 hidden sm:block" />
+            <div className="hidden sm:flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-gray-400">
                <span>Projects</span>
                <span className="text-gray-200">/</span>
                <span className="text-gray-900">{navItems.find((item) => item.path === location.pathname)?.name || 'Project'}</span>
@@ -166,7 +196,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           </div>
 
           <div className="flex items-center gap-4">
-            <div className="relative group">
+            <div className="relative group hidden md:block">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#0052CC] transition-colors" size={14} />
               <input
                 type="text"
@@ -194,7 +224,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
         </header>
 
         <main className="flex-1 overflow-auto bg-background/50 custom-scrollbar">
-          <div className="max-w-6xl mx-auto p-8">
+          <div className="max-w-6xl mx-auto p-4 md:p-8">
             {children}
           </div>
         </main>

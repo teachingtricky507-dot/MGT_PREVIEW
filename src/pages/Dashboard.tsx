@@ -510,7 +510,7 @@ export const Dashboard: React.FC = () => {
 
       {/* Projects List Section */}
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
               <div className="h-[1px] w-4 bg-gray-300" />

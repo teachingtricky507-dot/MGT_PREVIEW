@@ -154,18 +154,18 @@ export const Members: React.FC = () => {
         </CardContent>
       </Card>
 
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4 flex-1">
-          <div className="relative flex-1 max-w-md">
+      <div className="flex flex-col sm:flex-row gap-4 justify-between sm:items-center">
+        <div className="flex items-center gap-3 flex-1 w-full">
+          <div className="relative flex-1 max-w-md w-full">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
             <Input 
               placeholder="Search members by name or email..." 
-              className="pl-10 bg-white border-none shadow-sm h-11"
+              className="pl-10 bg-white border-none shadow-sm h-11 w-full"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
-          <Button variant="outline" className="h-11 border-none shadow-sm bg-white">
+          <Button variant="outline" className="h-11 border-none shadow-sm bg-white shrink-0">
             <Filter size={16} className="mr-2" />
             Filter
           </Button>
@@ -174,7 +174,7 @@ export const Members: React.FC = () => {
         <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
           <DialogTrigger
             render={
-              <Button className="h-11 bg-[#0052CC] hover:bg-[#0747A6] shadow-lg shadow-blue-500/20">
+              <Button className="h-11 bg-[#0052CC] hover:bg-[#0747A6] shadow-lg shadow-blue-500/20 w-full sm:w-auto justify-center">
                 <UserPlus size={16} className="mr-2" />
                 Add New Member
               </Button>

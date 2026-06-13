@@ -4,6 +4,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { Issue, Priority, User } from '../types';
 import { Card, CardContent } from './ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
+import { Badge } from './ui/badge';
 import { AlertCircle, ArrowUp, ArrowDown, Minus, Calendar, AlignLeft, Bug, Sparkles, CheckSquare, Bookmark } from 'lucide-react';
 import { format, isPast, isToday } from 'date-fns';
 import { motion } from 'motion/react';
@@ -14,9 +15,10 @@ interface KanbanCardProps {
   onClick?: () => void;
   assignee?: User;
   projectKey?: string;
+  showStatus?: boolean;
 }
 
-export const KanbanCard: React.FC<KanbanCardProps> = ({ issue, isOverlay, onClick, assignee, projectKey }) => {
+export const KanbanCard: React.FC<KanbanCardProps> = ({ issue, isOverlay, onClick, assignee, projectKey, showStatus }) => {
   const {
     attributes,
     listeners,
@@ -121,7 +123,7 @@ export const KanbanCard: React.FC<KanbanCardProps> = ({ issue, isOverlay, onClic
           )}
 
           <div className="flex items-center justify-between pt-1">
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2.5 flex-wrap">
               <div className="flex items-center gap-1.5 p-1 -m-1 rounded hover:bg-gray-100 transition-colors">
                 {getTypeIcon(issue.type)}
                 {getPriorityIcon(issue.priority)}
@@ -139,6 +141,17 @@ export const KanbanCard: React.FC<KanbanCardProps> = ({ issue, isOverlay, onClic
                   <Calendar size={10} />
                   <span>{format(new Date(issue.dueDate), 'MMM d')}</span>
                 </div>
+              )}
+
+              {showStatus && (
+                <Badge className={`text-[8px] font-extrabold uppercase px-1.5 py-0.5 border-none shrink-0 ${
+                  issue.status === 'DONE' ? 'bg-green-50 text-green-700 hover:bg-green-50 dark:bg-green-950/20' :
+                  issue.status === 'TESTING' ? 'bg-orange-50 text-orange-700 hover:bg-orange-50' :
+                  issue.status === 'IN_PROGRESS' ? 'bg-blue-50 text-blue-700 hover:bg-blue-50 dark:bg-blue-950/20' :
+                  'bg-gray-100 text-gray-500 hover:bg-gray-100'
+                }`}>
+                  {issue.status}
+                </Badge>
               )}
             </div>
 

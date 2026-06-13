@@ -135,7 +135,7 @@ export const ProjectView: React.FC = () => {
           <p className="text-gray-500 font-medium">{project?.description || 'Collaborate on tasks and track progress.'}</p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
           <div className="flex -space-x-2 mr-2">
             {members.slice(0, 5).map((member) => (
               <Avatar key={member.uid} className="w-8 h-8 border-2 border-white ring-1 ring-gray-100">
@@ -221,11 +221,11 @@ export const ProjectView: React.FC = () => {
             Chat
           </Button>
           
-          <div className="flex bg-muted p-1 rounded-lg">
+          <div className="flex bg-muted p-1 rounded-lg w-full sm:w-auto justify-between sm:justify-start">
             <Button 
               variant={viewMode === 'backlog' ? 'secondary' : 'ghost'} 
               size="sm" 
-              className="h-8 px-3 text-xs font-bold"
+              className="h-8 px-3 text-xs font-bold flex-1 sm:flex-none text-center justify-center"
               onClick={() => setViewMode('backlog')}
             >
               <Users size={14} className="mr-2" />
@@ -234,7 +234,7 @@ export const ProjectView: React.FC = () => {
             <Button 
               variant={viewMode === 'board' ? 'secondary' : 'ghost'} 
               size="sm" 
-              className="h-8 px-3 text-xs font-bold"
+              className="h-8 px-3 text-xs font-bold flex-1 sm:flex-none text-center justify-center"
               onClick={() => setViewMode('board')}
             >
               <LayoutDashboard size={14} className="mr-2" />
@@ -243,7 +243,7 @@ export const ProjectView: React.FC = () => {
             <Button 
               variant={viewMode === 'reports' ? 'secondary' : 'ghost'} 
               size="sm" 
-              className="h-8 px-3 text-xs font-bold"
+              className="h-8 px-3 text-xs font-bold flex-1 sm:flex-none text-center justify-center"
               onClick={() => setViewMode('reports')}
             >
               <BarChart3 size={14} className="mr-2" />
@@ -335,7 +335,7 @@ export const ProjectView: React.FC = () => {
                 const sprintIssues = issues.filter(i => i.sprintId === sprint.id);
                 return (
                   <Card key={sprint.id} className="border border-gray-200 shadow-sm overflow-hidden bg-white">
-                    <CardHeader className="p-4 bg-gray-50 flex flex-row items-center justify-between">
+                    <CardHeader className="p-4 bg-gray-50 flex flex-col sm:flex-row gap-3 sm:items-center justify-between">
                       <div className="flex items-center gap-3">
                         <span className="font-bold text-sm text-[#172B4D]">{sprint.name}</span>
                         <Badge variant="outline" className={`text-[9px] font-bold uppercase ${
