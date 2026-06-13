@@ -7,6 +7,8 @@ import { Dashboard } from './pages/Dashboard';
 import { ProjectView } from './pages/ProjectView';
 import { Settings } from './pages/Settings';
 import { Members } from './pages/Members';
+import { Timesheets } from './pages/Timesheets';
+import { AiAssistant } from './pages/AiAssistant';
 import { Toaster } from './components/ui/sonner';
 import { TooltipProvider } from './components/ui/tooltip';
 
@@ -24,11 +26,18 @@ const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   return <Layout>{children}</Layout>;
 };
 
+import { ThemeProvider } from 'next-themes';
+import { NotificationProvider } from './contexts/NotificationContext';
+
+const ThemeProviderAny = ThemeProvider as any;
+
 export default function App() {
   return (
-    <AuthProvider>
-      <TooltipProvider>
-        <BrowserRouter>
+    <ThemeProviderAny attribute="class" defaultTheme="system" enableSystem>
+      <AuthProvider>
+        <NotificationProvider>
+          <TooltipProvider>
+            <BrowserRouter>
           <Routes>
             <Route path="/login" element={<LoginView />} />
             <Route
@@ -63,11 +72,29 @@ export default function App() {
                 </PrivateRoute>
               }
             />
+            <Route
+              path="/timesheets"
+              element={
+                <PrivateRoute>
+                  <Timesheets />
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/chatbot"
+              element={
+                <PrivateRoute>
+                  <AiAssistant />
+                </PrivateRoute>
+              }
+            />
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>
           <Toaster position="bottom-right" />
         </BrowserRouter>
       </TooltipProvider>
-    </AuthProvider>
-  );
+    </NotificationProvider>
+  </AuthProvider>
+</ThemeProviderAny>
+);
 }

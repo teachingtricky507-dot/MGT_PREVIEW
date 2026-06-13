@@ -13,10 +13,16 @@ import {
   Command,
   Plus,
   Star,
-  Inbox
+  Clock,
+  Bot,
+  Inbox,
+  Sun,
+  Moon
 } from 'lucide-react';
+import { useTheme } from 'next-themes';
 import { Button } from './ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
+import { useNotifications } from '../contexts/NotificationContext';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,10 +33,13 @@ import {
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
 import { motion, AnimatePresence } from 'motion/react';
+import { CommandMenu } from './CommandMenu';
 
 export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { userProfile, logout } = useAuth();
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
+  const { theme, setTheme } = useTheme();
+  const { unreadCount } = useNotifications();
   const location = useLocation();
 
   const handleLogout = () => {
@@ -39,12 +48,15 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
   const navItems = [
     { name: 'Dashboard', icon: LayoutDashboard, path: '/' },
+    { name: 'Timesheets', icon: Clock, path: '/timesheets' },
+    { name: 'Emergent Chatti', icon: Bot, path: '/chatbot' },
     { name: 'Members', icon: Users, path: '/members' },
     { name: 'Settings', icon: Settings, path: '/settings' },
   ];
 
   return (
-    <div className="flex h-screen bg-[#FDFDFC] text-[#172B4D] overflow-hidden font-sans">
+    <div className="flex h-screen bg-background text-foreground overflow-hidden font-sans">
+      <CommandMenu />
       {/* Sidebar */}
       <AnimatePresence mode="wait">
         {isSidebarOpen && (
@@ -137,7 +149,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="h-12 bg-white/50 backdrop-blur-md border-b flex items-center justify-between px-6 shrink-0 z-10 sticky top-0">
+        <header className="h-12 bg-background/50 backdrop-blur-md border-b flex items-center justify-between px-6 shrink-0 z-10 sticky top-0">
           <div className="flex items-center gap-4">
             <button
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
@@ -159,17 +171,29 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
               <input
                 type="text"
                 placeholder="Search..."
-                className="pl-9 pr-4 py-1.5 bg-[#F4F5F7]/50 border-none focus:bg-white focus:ring-1 focus:ring-gray-200 rounded-md text-xs w-48 outline-none transition-all placeholder:font-medium"
+                className="pl-9 pr-4 py-1.5 bg-muted/50 border-none focus:bg-background focus:ring-1 focus:ring-border rounded-md text-xs w-48 outline-none transition-all placeholder:font-medium"
               />
             </div>
-            <button className="p-1.5 hover:bg-gray-100 rounded-md transition-colors text-gray-400 relative">
+            
+            <button 
+              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              className="p-1.5 hover:bg-muted rounded-md transition-colors text-muted-foreground"
+            >
+              {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
+
+            <button className="p-1.5 hover:bg-muted rounded-md transition-colors text-muted-foreground relative">
               <Bell size={18} />
-              <div className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-blue-500 rounded-full ring-2 ring-white" />
+              {unreadCount > 0 && (
+                <div className="absolute top-1 right-1 w-4 h-4 bg-red-500 rounded-full ring-2 ring-background flex items-center justify-center">
+                  <span className="text-[8px] font-bold text-white">{unreadCount}</span>
+                </div>
+              )}
             </button>
           </div>
         </header>
 
-        <main className="flex-1 overflow-auto bg-[#FDFDFC] custom-scrollbar">
+        <main className="flex-1 overflow-auto bg-background/50 custom-scrollbar">
           <div className="max-w-6xl mx-auto p-8">
             {children}
           </div>

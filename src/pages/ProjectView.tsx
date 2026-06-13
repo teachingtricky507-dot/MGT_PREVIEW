@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { issueService, projectService, userService } from '../services/firebaseService';
-import { Issue, IssueStatus, Priority, Project, User } from '../types';
+import { issueService, projectService, userService, sprintService } from '../services/firebaseService';
+import { Issue, IssueStatus, Priority, Project, User, Sprint } from '../types';
+import { toast } from 'sonner';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { Clock } from 'lucide-react';
 import { KanbanBoard } from '../components/KanbanBoard';
 import { IssueModal } from '../components/IssueModal';
 import { Button } from '../components/ui/button';
-import { Plus, Filter, Users, MoreHorizontal, Search, MessageSquare } from 'lucide-react';
+import { Plus, Filter, Users, MoreHorizontal, Search, MessageSquare, LayoutDashboard, BarChart3 } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -14,6 +17,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Badge } from '../components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '../components/ui/avatar';
 import { ProjectChat } from '../components/ProjectChat';
+import { BurndownChart } from '../components/BurndownChart';
+import { WorkloadChart } from '../components/WorkloadChart';
+import { CumulativeFlowChart } from '../components/CumulativeFlowChart';
 
 export const ProjectView: React.FC = () => {
   const { projectId } = useParams<{ projectId: string }>();
@@ -33,6 +39,8 @@ export const ProjectView: React.FC = () => {
   const [allSystemUsers, setAllSystemUsers] = useState<User[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [memberFilter, setMemberFilter] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'board' | 'backlog' | 'reports'>('backlog');
+  const [sprints, setSprints] = useState<Sprint[]>([]);
 
   useEffect(() => {
     if (projectId) {
@@ -41,9 +49,11 @@ export const ProjectView: React.FC = () => {
         setProject(proj);
         userService.getUsers(proj.members).then(setMembers);
       });
+      const unsubSprints = sprintService.subscribeToSprints(projectId, setSprints);
       return () => {
         unsubIssues();
         unsubProject();
+        unsubSprints();
       };
     }
   }, [projectId]);
@@ -95,7 +105,10 @@ export const ProjectView: React.FC = () => {
     });
   };
 
-  const filteredIssues = issues.filter(issue => 
+  const activeSprint = sprints.find(s => s.status === 'ACTIVE');
+  const boardIssues = activeSprint ? issues.filter(i => i.sprintId === activeSprint.id) : [];
+
+  const filteredIssues = boardIssues.filter(issue => 
     (searchQuery === '' || issue.title.toLowerCase().includes(searchQuery.toLowerCase())) &&
     (memberFilter === null || issue.assigneeId === memberFilter)
   );
@@ -198,7 +211,6 @@ export const ProjectView: React.FC = () => {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-
           <Button 
             variant="outline" 
             size="sm" 
@@ -208,6 +220,36 @@ export const ProjectView: React.FC = () => {
             <MessageSquare className="mr-2 h-4 w-4" />
             Chat
           </Button>
+          
+          <div className="flex bg-muted p-1 rounded-lg">
+            <Button 
+              variant={viewMode === 'backlog' ? 'secondary' : 'ghost'} 
+              size="sm" 
+              className="h-8 px-3 text-xs font-bold"
+              onClick={() => setViewMode('backlog')}
+            >
+              <Users size={14} className="mr-2" />
+              Backlog
+            </Button>
+            <Button 
+              variant={viewMode === 'board' ? 'secondary' : 'ghost'} 
+              size="sm" 
+              className="h-8 px-3 text-xs font-bold"
+              onClick={() => setViewMode('board')}
+            >
+              <LayoutDashboard size={14} className="mr-2" />
+              Active Board
+            </Button>
+            <Button 
+              variant={viewMode === 'reports' ? 'secondary' : 'ghost'} 
+              size="sm" 
+              className="h-8 px-3 text-xs font-bold"
+              onClick={() => setViewMode('reports')}
+            >
+              <BarChart3 size={14} className="mr-2" />
+              Reports
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -267,14 +309,215 @@ export const ProjectView: React.FC = () => {
         </div>
       </div>
 
-      {/* Board */}
-      <div className="flex-1 min-h-0 overflow-hidden">
-        <KanbanBoard 
-          projectId={projectId!} 
-          issues={filteredIssues} 
-          onIssueClick={handleIssueClick}
-          members={members}
-        />
+      <div className="flex-1 min-h-0 overflow-auto custom-scrollbar">
+        {viewMode === 'backlog' && (
+          <div className="space-y-6 pb-12">
+            <div className="flex justify-between items-center">
+              <h2 className="text-xl font-bold text-[#172B4D]">Backlog Planner</h2>
+              <Button 
+                onClick={async () => {
+                  const name = prompt("Enter sprint name:", `Sprint ${sprints.length + 1}`);
+                  if (name && projectId) {
+                    await sprintService.createSprint(projectId, name);
+                    toast.success("Sprint created!");
+                  }
+                }}
+                className="bg-[#0052CC] hover:bg-[#0747A6] h-9 text-xs font-bold shadow-lg shadow-blue-500/10"
+              >
+                <Plus size={14} className="mr-1.5" />
+                Create Sprint
+              </Button>
+            </div>
+
+            {/* Sprints List */}
+            <div className="space-y-4">
+              {sprints.filter(s => s.status !== 'COMPLETED').map(sprint => {
+                const sprintIssues = issues.filter(i => i.sprintId === sprint.id);
+                return (
+                  <Card key={sprint.id} className="border border-gray-200 shadow-sm overflow-hidden bg-white">
+                    <CardHeader className="p-4 bg-gray-50 flex flex-row items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className="font-bold text-sm text-[#172B4D]">{sprint.name}</span>
+                        <Badge variant="outline" className={`text-[9px] font-bold uppercase ${
+                          sprint.status === 'ACTIVE' ? 'bg-green-50 text-green-700 border-green-100' : 'bg-blue-50 text-blue-700 border-blue-100'
+                        }`}>
+                          {sprint.status}
+                        </Badge>
+                        <span className="text-xs text-gray-400 font-medium">({sprintIssues.length} issues)</span>
+                      </div>
+                      
+                      <div className="flex items-center gap-2">
+                        {sprint.status === 'PLANNING' ? (
+                          <Button 
+                            size="sm" 
+                            onClick={async () => {
+                              if (confirm(`Start ${sprint.name}?`)) {
+                                await sprintService.startSprint(projectId!, sprint.id, 2);
+                                toast.success(`${sprint.name} started!`);
+                              }
+                            }}
+                            className="bg-green-600 hover:bg-green-700 h-8 text-xs font-bold"
+                          >
+                            Start Sprint
+                          </Button>
+                        ) : (
+                          <Button 
+                            size="sm" 
+                            onClick={async () => {
+                              if (confirm(`Complete ${sprint.name}? Incomplete issues will be moved back to backlog.`)) {
+                                await sprintService.completeSprint(projectId!, sprint.id);
+                                toast.success(`${sprint.name} completed!`);
+                              }
+                            }}
+                            className="bg-blue-600 hover:bg-blue-700 h-8 text-xs font-bold"
+                          >
+                            Complete Sprint
+                          </Button>
+                        )}
+                      </div>
+                    </CardHeader>
+                    <CardContent className="p-2 space-y-1 bg-white">
+                      {sprintIssues.map(issue => (
+                        <div 
+                          key={issue.id} 
+                          onClick={() => handleIssueClick(issue)}
+                          className="flex items-center justify-between p-2 rounded-md hover:bg-gray-50 border border-transparent hover:border-gray-200 cursor-pointer text-xs transition-colors"
+                        >
+                          <div className="flex items-center gap-3 flex-1 min-w-0">
+                            <span className="font-mono text-[10px] font-bold text-blue-600">
+                              {project?.key}-{issue.issueIndex || 1}
+                            </span>
+                            <span className="text-gray-400 font-bold uppercase text-[9px] font-mono">[{issue.type || 'TASK'}]</span>
+                            <span className="font-semibold text-gray-700 text-xs truncate">{issue.title}</span>
+                          </div>
+                          
+                          <div className="flex items-center gap-3" onClick={e => e.stopPropagation()}>
+                            <Select 
+                              value={issue.sprintId || 'backlog'} 
+                              onValueChange={async (val) => {
+                                await issueService.updateIssue(projectId!, issue.id, { 
+                                  sprintId: val === 'backlog' ? '' : val 
+                                }, userProfile?.uid || '');
+                                toast.success("Issue moved!");
+                              }}
+                            >
+                              <SelectTrigger className="h-7 text-[10px] w-28 bg-gray-50 border-none shadow-none font-bold text-gray-600">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="backlog">Backlog</SelectItem>
+                                {sprints.filter(s => s.status !== 'COMPLETED').map(s => (
+                                  <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                      ))}
+                      {sprintIssues.length === 0 && (
+                        <div className="py-6 text-center text-xs text-gray-400 italic">Drag/move issues here to plan this sprint.</div>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+
+            {/* Backlog Section */}
+            <Card className="border border-gray-200 shadow-sm overflow-hidden bg-white">
+              <CardHeader className="p-4 bg-gray-50/50">
+                <span className="text-sm font-bold text-[#172B4D]">Backlog ({issues.filter(i => !i.sprintId).length} issues)</span>
+              </CardHeader>
+              <CardContent className="p-2 space-y-1 bg-white">
+                {issues.filter(i => !i.sprintId).map(issue => (
+                  <div 
+                    key={issue.id} 
+                    onClick={() => handleIssueClick(issue)}
+                    className="flex items-center justify-between p-2 rounded-md hover:bg-gray-50 border border-transparent hover:border-gray-200 cursor-pointer text-xs transition-colors"
+                  >
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <span className="font-mono text-[10px] font-bold text-blue-600">
+                        {project?.key}-{issue.issueIndex || 1}
+                      </span>
+                      <span className="text-gray-400 font-bold uppercase text-[9px] font-mono">[{issue.type || 'TASK'}]</span>
+                      <span className="font-semibold text-gray-700 text-xs truncate">{issue.title}</span>
+                    </div>
+                    
+                    <div className="flex items-center gap-3" onClick={e => e.stopPropagation()}>
+                      <Select 
+                        value="backlog" 
+                        onValueChange={async (val) => {
+                          if (val !== 'backlog') {
+                            await issueService.updateIssue(projectId!, issue.id, { sprintId: val }, userProfile?.uid || '');
+                            toast.success("Issue moved to sprint!");
+                          }
+                        }}
+                      >
+                        <SelectTrigger className="h-7 text-[10px] w-28 bg-gray-50 border-none shadow-none font-bold text-gray-600">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="backlog">Backlog</SelectItem>
+                          {sprints.filter(s => s.status !== 'COMPLETED').map(s => (
+                            <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                ))}
+                {issues.filter(i => !i.sprintId).length === 0 && (
+                  <div className="py-6 text-center text-xs text-gray-400 italic">No issues in Backlog. Create one above!</div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {viewMode === 'board' && (
+          !activeSprint ? (
+            <div className="py-16 text-center bg-white rounded-xl border border-gray-100 shadow-sm max-w-xl mx-auto space-y-4">
+              <Clock className="mx-auto h-12 w-12 text-gray-300 animate-pulse" />
+              <h3 className="text-lg font-bold text-[#172B4D]">No Active Sprint</h3>
+              <p className="text-sm text-gray-400 max-w-sm mx-auto font-medium">Active Board only displays issues belonging to the active sprint. Plan and start a sprint in the Backlog first.</p>
+              <Button onClick={() => setViewMode('backlog')} className="bg-[#0052CC] font-bold">Go to Backlog Planner</Button>
+            </div>
+          ) : (
+            <KanbanBoard 
+              projectId={projectId!} 
+              issues={filteredIssues} 
+              onIssueClick={handleIssueClick}
+              members={members}
+              projectKey={project?.key || 'PROJ'}
+            />
+          )
+        )}
+
+        {viewMode === 'reports' && (
+          <div className="space-y-8 pb-10">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              <BurndownChart issues={issues} />
+              <WorkloadChart issues={issues} members={members} />
+              <div className="lg:col-span-2">
+                <CumulativeFlowChart issues={issues} />
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {[
+                { label: 'Efficiency', value: '84%', desc: 'Tasks finished vs planned' },
+                { label: 'Velocity', value: '12.4', desc: 'Avg issues per week' },
+                { label: 'Cycle Time', value: '2.5d', desc: 'Avg time to complete' },
+              ].map((stat, i) => (
+                <div key={i} className="bg-white dark:bg-card p-6 rounded-xl border border-border">
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{stat.label}</span>
+                  <div className="text-3xl font-bold mt-1 text-foreground">{stat.value}</div>
+                  <p className="text-xs text-muted-foreground mt-1">{stat.desc}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Modals */}

@@ -14,6 +14,13 @@ export const Settings: React.FC = () => {
   const [name, setName] = React.useState(userProfile?.displayName || '');
   const [isSaving, setIsSaving] = React.useState(false);
 
+  // AI API Credentials State
+  const [geminiKey1, setGeminiKey1] = React.useState(localStorage.getItem('gemini_api_key') || '');
+  const [geminiKey2, setGeminiKey2] = React.useState(localStorage.getItem('gemini_api_key_2') || '');
+  const [geminiKey3, setGeminiKey3] = React.useState(localStorage.getItem('gemini_api_key_3') || '');
+  const [geminiKey4, setGeminiKey4] = React.useState(localStorage.getItem('gemini_api_key_4') || '');
+  const [groqKey, setGroqKey] = React.useState(localStorage.getItem('groq_api_key') || '');
+
   const copyId = () => {
     if (userProfile?.uid) {
       navigator.clipboard.writeText(userProfile.uid);
@@ -28,13 +35,26 @@ export const Settings: React.FC = () => {
     setIsSaving(true);
     try {
       await updateProfile(name);
-      toast.success('Profile updated successfully');
+      localStorage.setItem('gemini_api_key', geminiKey1);
+      localStorage.setItem('gemini_api_key_2', geminiKey2);
+      localStorage.setItem('gemini_api_key_3', geminiKey3);
+      localStorage.setItem('gemini_api_key_4', geminiKey4);
+      localStorage.setItem('groq_api_key', groqKey);
+      toast.success('Profile and API keys updated successfully');
     } catch (error) {
       toast.error('Failed to update profile');
     } finally {
       setIsSaving(false);
     }
   };
+
+  const hasChanges = 
+    name !== userProfile?.displayName ||
+    geminiKey1 !== (localStorage.getItem('gemini_api_key') || '') ||
+    geminiKey2 !== (localStorage.getItem('gemini_api_key_2') || '') ||
+    geminiKey3 !== (localStorage.getItem('gemini_api_key_3') || '') ||
+    geminiKey4 !== (localStorage.getItem('gemini_api_key_4') || '') ||
+    groqKey !== (localStorage.getItem('groq_api_key') || '');
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
@@ -46,7 +66,7 @@ export const Settings: React.FC = () => {
         <Button 
           className="bg-[#0052CC] hover:bg-[#0747A6]" 
           onClick={handleSave}
-          disabled={isSaving || name === userProfile?.displayName}
+          disabled={isSaving || !hasChanges}
         >
           {isSaving ? 'Saving...' : 'Save Changes'}
         </Button>
@@ -103,6 +123,73 @@ export const Settings: React.FC = () => {
               </Button>
             </div>
             <p className="text-xs text-gray-400">Teammates can use this ID to add you to their project members list.</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>AI API Credentials</CardTitle>
+          <CardDescription>Configure multiple API keys for Google Gemini auto-rotation and Groq provider fallback.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3">
+            <div className="grid gap-1">
+              <Label htmlFor="geminiKey1" className="text-xs font-bold text-gray-500 uppercase tracking-widest pl-1">Primary Gemini API Key</Label>
+              <Input 
+                id="geminiKey1" 
+                type="password" 
+                value={geminiKey1} 
+                onChange={(e) => setGeminiKey1(e.target.value)} 
+                placeholder="AIzaSy... (Falls back to .env if empty)" 
+                className="font-mono text-xs h-10" 
+              />
+            </div>
+            <div className="grid gap-1">
+              <Label htmlFor="geminiKey2" className="text-xs font-bold text-gray-500 uppercase tracking-widest pl-1">Backup Gemini API Key 2</Label>
+              <Input 
+                id="geminiKey2" 
+                type="password" 
+                value={geminiKey2} 
+                onChange={(e) => setGeminiKey2(e.target.value)} 
+                placeholder="AIzaSy... (Used if primary fails)" 
+                className="font-mono text-xs h-10" 
+              />
+            </div>
+            <div className="grid gap-1">
+              <Label htmlFor="geminiKey3" className="text-xs font-bold text-gray-500 uppercase tracking-widest pl-1">Backup Gemini API Key 3</Label>
+              <Input 
+                id="geminiKey3" 
+                type="password" 
+                value={geminiKey3} 
+                onChange={(e) => setGeminiKey3(e.target.value)} 
+                placeholder="AIzaSy..." 
+                className="font-mono text-xs h-10" 
+              />
+            </div>
+            <div className="grid gap-1">
+              <Label htmlFor="geminiKey4" className="text-xs font-bold text-gray-500 uppercase tracking-widest pl-1">Backup Gemini API Key 4</Label>
+              <Input 
+                id="geminiKey4" 
+                type="password" 
+                value={geminiKey4} 
+                onChange={(e) => setGeminiKey4(e.target.value)} 
+                placeholder="AIzaSy..." 
+                className="font-mono text-xs h-10" 
+              />
+            </div>
+            <div className="grid gap-1">
+              <Label htmlFor="groqKey" className="text-xs font-bold text-gray-500 uppercase tracking-widest pl-1">Groq API Key (Llama-3 Fallback)</Label>
+              <Input 
+                id="groqKey" 
+                type="password" 
+                value={groqKey} 
+                onChange={(e) => setGroqKey(e.target.value)} 
+                placeholder="gsk_... (Used if all Gemini keys fail)" 
+                className="font-mono text-xs h-10" 
+              />
+            </div>
+            <p className="text-[10px] text-gray-400 font-medium">Note: Keys stored here are kept securely in local browser storage and used for client-side API requests.</p>
           </div>
         </CardContent>
       </Card>

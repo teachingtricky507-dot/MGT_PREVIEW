@@ -7,17 +7,21 @@ import { Button } from '../components/ui/button';
 import { Plus, Folder, Users, Clock, Layout, CheckCircle2, AlertCircle, BarChart3, Activity, MoreVertical, Edit2, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '../components/ui/dialog';
-import { 
-  DropdownMenu, 
-  DropdownMenuContent, 
-  DropdownMenuItem, 
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuTrigger 
+  DropdownMenuTrigger
 } from '../components/ui/dropdown-menu';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Badge } from '../components/ui/badge';
 import { ActivityFeed } from '../components/ActivityFeed';
+import { aiService } from '../services/aiService';
+import { Sparkles, Loader2, Download } from 'lucide-react';
+import { toast } from 'sonner';
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 export const Dashboard: React.FC = () => {
   const { userProfile } = useAuth();
@@ -33,22 +37,67 @@ export const Dashboard: React.FC = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [projectToEdit, setProjectToEdit] = useState<Project | null>(null);
+  const [aiInsights, setAiInsights] = useState<string>('');
+  const [isLoadingInsights, setIsLoadingInsights] = useState(false);
+  const [isStandupOpen, setIsStandupOpen] = useState(false);
+  const [standupText, setStandupText] = useState('');
+  const [isGeneratingStandup, setIsGeneratingStandup] = useState(false);
   const navigate = useNavigate();
+
+  const handleGenerateStandup = async () => {
+    if (!userProfile) return;
+    setIsGeneratingStandup(true);
+    setIsStandupOpen(true);
+
+    // Filter issues assigned to the user
+    const myIssues = allIssues.filter(i => i.assigneeId === userProfile.uid);
+    const completed = myIssues.filter(i => i.status === 'DONE').map(i => i.title);
+    const inProgress = myIssues.filter(i => i.status === 'IN_PROGRESS' || i.status === 'TESTING').map(i => i.title);
+    const blockers = myIssues.filter(i => i.priority === 'URGENT' || i.priority === 'HIGH').map(i => i.title);
+
+    try {
+      const standup = await aiService.generateDailyStandup(completed, inProgress, blockers);
+      setStandupText(standup);
+    } catch (error) {
+      setStandupText("Failed to generate daily standup. Check your Gemini API Key.");
+    } finally {
+      setIsGeneratingStandup(false);
+    }
+  };
+
+  const handleGenerateInsights = async () => {
+    setIsLoadingInsights(true);
+    try {
+      const insights = await aiService.getProjectInsights({
+        totalIssues: allIssues.length,
+        stats,
+        priorityStats,
+        projectCount: projects.length
+      });
+      setAiInsights(insights);
+      toast.success("Insights generated successfully");
+    } catch (error) {
+      toast.error("Failed to generate insights");
+      setAiInsights("Failed to load insights. Make sure your API keys are configured.");
+    } finally {
+      setIsLoadingInsights(false);
+    }
+  };
 
   useEffect(() => {
     if (userProfile) {
       const unsubProjects = projectService.subscribeToProjects(userProfile.uid, (projs) => {
         setProjects(projs);
-        
+
         const issueUnsubs: (() => void)[] = [];
         const activityUnsubs: (() => void)[] = [];
         const mergedIssues: Record<string, Issue[]> = {};
         const mergedActivities: Record<string, ActivityType[]> = {};
-        
+
         // Track all unique member IDs across all projects
         const allMemberIds = new Set<string>();
         projs.forEach(p => p.members.forEach(m => allMemberIds.add(m)));
-        
+
         // Fetch users for these IDs
         userService.getUsers(Array.from(allMemberIds)).then(setTeamMembers);
 
@@ -114,7 +163,7 @@ export const Dashboard: React.FC = () => {
 
   const handleCreateProject = async () => {
     if (!userProfile || !newProjectName || !newProjectKey) return;
-    
+
     await projectService.createProject({
       name: newProjectName,
       key: newProjectKey.toUpperCase(),
@@ -122,7 +171,7 @@ export const Dashboard: React.FC = () => {
       ownerId: userProfile.uid,
       members: [userProfile.uid, ...members],
     });
-    
+
     setNewProjectName('');
     setNewProjectKey('');
     setMembers([]);
@@ -131,13 +180,13 @@ export const Dashboard: React.FC = () => {
 
   const handleUpdateProject = async () => {
     if (!projectToEdit || !newProjectName || !newProjectKey) return;
-    
+
     await projectService.updateProject(projectToEdit.id, {
       name: newProjectName,
       key: newProjectKey.toUpperCase(),
       members: [userProfile!.uid, ...members],
     });
-    
+
     setNewProjectName('');
     setNewProjectKey('');
     setMembers([]);
@@ -161,6 +210,107 @@ export const Dashboard: React.FC = () => {
     setIsEditDialogOpen(true);
   };
 
+  const exportToCSV = () => {
+    if (projects.length === 0) return;
+
+    const headers = ['Project Name', 'Key', 'Members', 'Total Issues', 'Completion %'];
+    const rows = projects.map(p => {
+      const pIssues = allIssues.filter(i => i.projectId === p.id);
+      const done = pIssues.filter(i => i.status === 'DONE').length;
+      const progress = pIssues.length > 0 ? Math.round((done / pIssues.length) * 100) : 0;
+      return [
+        p.name,
+        p.key,
+        p.members.length,
+        pIssues.length,
+        `${progress}%`
+      ];
+    });
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `emergent_report_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success('Report exported successfully');
+  };
+
+  const renderFormattedInsights = (text: string) => {
+    if (!text) return null;
+    
+    const lines = text.split('\n');
+    return (
+      <div className="space-y-3 mt-2">
+        {lines.map((line, idx) => {
+          let content = line.trim();
+          if (!content) return <div key={idx} className="h-1.5" />;
+          
+          // Check for headings
+          if (content.startsWith('###')) {
+            return (
+              <h4 key={idx} className="text-xs font-bold text-blue-900 dark:text-blue-100 uppercase tracking-widest mt-4 mb-1.5 first:mt-0">
+                {content.replace(/^###\s*/, '')}
+              </h4>
+            );
+          }
+          if (content.startsWith('##')) {
+            return (
+              <h3 key={idx} className="text-sm font-bold text-blue-900 dark:text-blue-100 mt-5 mb-2 first:mt-0">
+                {content.replace(/^##\s*/, '')}
+              </h3>
+            );
+          }
+          if (content.startsWith('#')) {
+            return (
+              <h2 key={idx} className="text-base font-bold text-blue-950 dark:text-blue-50 mt-6 mb-2 first:mt-0">
+                {content.replace(/^#\s*/, '')}
+              </h2>
+            );
+          }
+          
+          // Check for lists
+          const isBullet = content.startsWith('-') || content.startsWith('*');
+          if (isBullet) {
+            content = content.replace(/^[-*]\s*/, '');
+          }
+          
+          // Parse bold text **word**
+          const parts = content.split(/(\*\*.*?\*\*)/g);
+          const elements = parts.map((part, pIdx) => {
+            if (part.startsWith('**') && part.endsWith('**')) {
+              return <strong key={pIdx} className="font-extrabold text-blue-950 dark:text-blue-50">{part.slice(2, -2)}</strong>;
+            }
+            return part;
+          });
+
+          if (isBullet) {
+            return (
+              <div key={idx} className="flex items-start gap-2 ml-3 text-xs text-blue-800 dark:text-blue-200">
+                <span className="text-blue-500 shrink-0 mt-1.5 w-1 h-1 rounded-full bg-blue-500" />
+                <span className="leading-relaxed">{elements}</span>
+              </div>
+            );
+          }
+          
+          return (
+            <p key={idx} className="text-xs text-blue-800 dark:text-blue-200 leading-relaxed">
+              {elements}
+            </p>
+          );
+        })}
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-10 pb-12 font-sans">
       {/* Header Section */}
@@ -174,6 +324,57 @@ export const Dashboard: React.FC = () => {
         </h1>
         <p className="text-gray-500 font-medium">Here's a calm overview of everything in motion.</p>
       </div>
+
+      {/* AI Insights Card */}
+      <Card className="border-none shadow-sm bg-blue-50/50 dark:bg-blue-900/10 overflow-hidden">
+        <CardContent className="p-6 space-y-4">
+          <div className="flex items-center justify-between gap-4 flex-wrap sm:flex-nowrap border-b border-blue-100/50 dark:border-blue-800/50 pb-4">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 bg-blue-100 dark:bg-blue-800 rounded-lg shrink-0">
+                <Sparkles className="w-5 h-5 text-blue-600 dark:text-blue-300 animate-pulse" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-blue-900 dark:text-blue-100 uppercase tracking-wider">AI Project Insights</h3>
+                <p className="text-xs text-blue-600/80 dark:text-blue-400">Automated workspace intelligence & status summaries</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0 flex-wrap sm:flex-nowrap">
+              <Button
+                onClick={handleGenerateInsights}
+                disabled={isLoadingInsights}
+                className="bg-blue-100 hover:bg-blue-200 text-blue-800 text-xs font-bold flex items-center gap-1.5 h-9"
+              >
+                {isLoadingInsights ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles size={14} />}
+                Generate Insights
+              </Button>
+              <Button 
+                onClick={handleGenerateStandup}
+                className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 h-9 shadow-sm"
+              >
+                <Sparkles size={14} />
+                Standup Generator
+              </Button>
+            </div>
+          </div>
+          
+          <div className="space-y-1">
+            {isLoadingInsights ? (
+              <div className="flex items-center gap-2 py-3 text-xs text-blue-600 dark:text-blue-400 font-medium">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Running advanced analytics and compiling workspace health...</span>
+              </div>
+            ) : aiInsights ? (
+              <div className="border-l-2 border-blue-200 dark:border-blue-800 pl-4 py-1">
+                {renderFormattedInsights(aiInsights)}
+              </div>
+            ) : (
+              <p className="text-xs text-blue-600 dark:text-blue-400 italic font-medium py-1">
+                Click "Generate Insights" to run project health analysis.
+              </p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Stats Grid */}
       <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
@@ -200,65 +401,96 @@ export const Dashboard: React.FC = () => {
 
       {/* Main Content Grid */}
       <div className="grid lg:grid-cols-2 gap-8">
-        {/* Status Breakdown */}
-        <Card className="border-none shadow-sm bg-white overflow-hidden">
-          <CardHeader className="pb-6">
-            <div className="flex items-center gap-2 mb-1">
-              <BarChart3 className="w-4 h-4 text-gray-400" />
-              <div className="h-[1px] w-4 bg-gray-300" />
-              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">By Status</span>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-6">
-             {[
-               { label: 'TO DO', value: stats.todo, color: 'bg-gray-400' },
-               { label: 'IN PROGRESS', value: stats.inProgress, color: 'bg-[#0052CC]' },
-               { label: 'TESTING', value: stats.testing, color: 'bg-orange-400' },
-               { label: 'DONE', value: stats.done, color: 'bg-green-500' },
-             ].map((item, i) => (
-               <div key={i} className="space-y-1.5">
-                 <div className="flex justify-between items-center text-[10px] font-bold">
-                   <div className="flex items-center gap-2">
-                      <div className={`w-2 h-2 rounded-full ${item.color}`} />
-                      <span className="text-gray-600 tracking-wider">{item.label}</span>
-                   </div>
-                   <span className="text-[#172B4D]">{item.value}</span>
-                 </div>
-                 <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
-                   <div 
-                    className={`h-full ${item.color} transition-all duration-1000 ease-out`} 
-                    style={{ width: `${allIssues.length > 0 ? (item.value / allIssues.length) * 100 : 0}%` }}
-                   />
-                 </div>
-               </div>
-             ))}
-          </CardContent>
+        {/* Status Breakdown (Donut Chart) */}
+        <Card className="border-none shadow-sm bg-white overflow-hidden p-6 flex flex-col justify-between">
+          <div>
+            <CardHeader className="p-0 pb-6">
+              <div className="flex items-center gap-2 mb-1">
+                <BarChart3 className="w-4 h-4 text-gray-400" />
+                <div className="h-[1px] w-4 bg-gray-300" />
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Status Breakdown</span>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              {(() => {
+                const statusData = [
+                  { name: 'To Do', value: stats.todo, color: '#9CA3AF' },
+                  { name: 'In Progress', value: stats.inProgress, color: '#0052CC' },
+                  { name: 'Testing', value: stats.testing, color: '#F97316' },
+                  { name: 'Done', value: stats.done, color: '#10B981' },
+                ].filter(d => d.value > 0);
+
+                return (
+                  <div className="h-64 w-full flex items-center justify-center">
+                    {statusData.length > 0 ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={statusData}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={60}
+                            outerRadius={80}
+                            paddingAngle={4}
+                            dataKey="value"
+                          >
+                            {statusData.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }} />
+                          <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, fontWeight: 'bold' }} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <span className="text-xs text-gray-400 italic">No tasks created yet.</span>
+                    )}
+                  </div>
+                );
+              })()}
+            </CardContent>
+          </div>
         </Card>
 
-        {/* Priority Distribution */}
-        <Card className="border-none shadow-sm bg-white">
-          <CardHeader className="pb-6">
-            <div className="flex items-center gap-2 mb-1">
-              <AlertCircle className="w-4 h-4 text-gray-400" />
-              <div className="h-[1px] w-4 bg-gray-300" />
-              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">By Priority</span>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 gap-4">
-              {[
-                { label: 'LOW', value: priorityStats.low, color: 'bg-blue-50 text-blue-700 border-blue-100' },
-                { label: 'MEDIUM', value: priorityStats.medium, color: 'bg-orange-50 text-orange-700 border-orange-100' },
-                { label: 'HIGH', value: priorityStats.high, color: 'bg-red-50 text-red-700 border-red-100' },
-                { label: 'URGENT', value: priorityStats.urgent, color: 'bg-red-900 text-white border-red-900' },
-              ].map((item, i) => (
-                <div key={i} className={`p-4 rounded-lg border flex flex-col justify-between ${item.color}`}>
-                  <span className="text-[10px] font-bold tracking-widest uppercase mb-4">{item.label}</span>
-                  <span className="text-2xl font-bold">{item.value}</span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
+        {/* Priority Distribution (Bar Chart) */}
+        <Card className="border-none shadow-sm bg-white p-6 flex flex-col justify-between">
+          <div>
+            <CardHeader className="p-0 pb-6">
+              <div className="flex items-center gap-2 mb-1">
+                <AlertCircle className="w-4 h-4 text-gray-400" />
+                <div className="h-[1px] w-4 bg-gray-300" />
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Priority Load</span>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              {(() => {
+                const priorityData = [
+                  { name: 'Low', count: priorityStats.low, color: '#3B82F6' },
+                  { name: 'Medium', count: priorityStats.medium, color: '#F97316' },
+                  { name: 'High', count: priorityStats.high, color: '#EF4444' },
+                  { name: 'Urgent', count: priorityStats.urgent, color: '#7F1D1D' },
+                ];
+
+                return (
+                  <div className="h-64 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={priorityData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F4F5F7" />
+                        <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fill: '#9CA3AF', fontSize: 10, fontWeight: 600 }} />
+                        <YAxis tickLine={false} axisLine={false} tick={{ fill: '#9CA3AF', fontSize: 10, fontWeight: 600 }} />
+                        <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }} />
+                        <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                          {priorityData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                );
+              })()}
+            </CardContent>
+          </div>
         </Card>
       </div>
 
@@ -280,93 +512,100 @@ export const Dashboard: React.FC = () => {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div className="space-y-1">
-             <div className="flex items-center gap-2">
-                <div className="h-[1px] w-4 bg-gray-300" />
-                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">All Projects</span>
-             </div>
-             <h2 className="text-3xl font-bold text-[#172B4D]">Projects</h2>
+            <div className="flex items-center gap-2">
+              <div className="h-[1px] w-4 bg-gray-300" />
+              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">All Projects</span>
+            </div>
+            <h2 className="text-3xl font-bold text-[#172B4D] dark:text-white">Projects</h2>
           </div>
 
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger
-              render={
-                <Button className="bg-[#0052CC] hover:bg-[#0747A6] h-11 px-6 text-sm font-bold shadow-lg shadow-blue-500/20">
-                  <Plus size={18} className="mr-2" />
-                  New Project
-                </Button>
-              }
-            />
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Create new project</DialogTitle>
-                <DialogDescription>
-                  Set up a new workspace for your team.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="name">Project Name</Label>
-                  <Input 
-                    id="name" 
-                    value={newProjectName} 
-                    onChange={(e) => {
-                      setNewProjectName(e.target.value);
-                      if (!newProjectKey) {
-                        setNewProjectKey(e.target.value.substring(0, 3).toUpperCase());
-                      }
-                    }} 
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="key">Project Key</Label>
-                  <Input 
-                    id="key" 
-                    value={newProjectKey} 
-                    onChange={(e) => setNewProjectKey(e.target.value.toUpperCase())}
-                    maxLength={5}
-                  />
-                  <p className="text-xs text-gray-400">Usually 3-5 uppercase letters.</p>
-                </div>
-                <div className="grid gap-2">
-                  <Label className="text-xs font-bold text-gray-500 uppercase tracking-widest">Select Members</Label>
-                  <div className="max-h-[200px] overflow-y-auto border rounded-md p-2 space-y-1 bg-gray-50/50">
-                    {allSystemUsers.filter(u => u.uid !== userProfile?.uid).map(user => (
-                      <div 
-                        key={user.uid} 
-                        className={`flex items-center justify-between p-2 rounded-md cursor-pointer transition-colors ${members.includes(user.uid) ? 'bg-blue-100 border-blue-200' : 'hover:bg-white'}`}
-                        onClick={() => {
-                          if (members.includes(user.uid)) {
-                            setMembers(members.filter(m => m !== user.uid));
-                          } else {
-                            setMembers([...members, user.uid]);
-                          }
-                        }}
-                      >
-                        <div className="flex items-center gap-2">
-                          <div className={`w-2 h-2 rounded-full ${members.includes(user.uid) ? 'bg-blue-600' : 'bg-gray-300'}`} />
-                          <span className="text-sm font-medium">{user.displayName}</span>
-                        </div>
-                        {members.includes(user.uid) && <Plus size={14} className="rotate-45 text-blue-600" />}
-                      </div>
-                    ))}
-                    {allSystemUsers.length <= 1 && (
-                      <p className="text-xs text-gray-400 text-center py-4">No other members found. Add them in the Members page first.</p>
-                    )}
+          <div className="flex items-center gap-3">
+            <Button variant="outline" onClick={exportToCSV} className="h-11 px-4 text-sm font-bold">
+              <Download size={18} className="mr-2" />
+              Export CSV
+            </Button>
+
+            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+              <DialogTrigger
+                render={
+                  <Button className="bg-[#0052CC] hover:bg-[#0747A6] h-11 px-6 text-sm font-bold shadow-lg shadow-blue-500/20">
+                    <Plus size={18} className="mr-2" />
+                    New Project
+                  </Button>
+                }
+              />
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Create new project</DialogTitle>
+                  <DialogDescription>
+                    Set up a new workspace for your team.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="grid gap-4 py-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="name">Project Name</Label>
+                    <Input
+                      id="name"
+                      value={newProjectName}
+                      onChange={(e) => {
+                        setNewProjectName(e.target.value);
+                        if (!newProjectKey) {
+                          setNewProjectKey(e.target.value.substring(0, 3).toUpperCase());
+                        }
+                      }}
+                    />
                   </div>
-                  <p className="text-[10px] text-gray-400">Click to add/remove members from the project.</p>
+                  <div className="grid gap-2">
+                    <Label htmlFor="key">Project Key</Label>
+                    <Input
+                      id="key"
+                      value={newProjectKey}
+                      onChange={(e) => setNewProjectKey(e.target.value.toUpperCase())}
+                      maxLength={5}
+                    />
+                    <p className="text-xs text-gray-400">Usually 3-5 uppercase letters.</p>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label className="text-xs font-bold text-gray-500 uppercase tracking-widest">Select Members</Label>
+                    <div className="max-h-[200px] overflow-y-auto border rounded-md p-2 space-y-1 bg-gray-50/50">
+                      {allSystemUsers.filter(u => u.uid !== userProfile?.uid).map(user => (
+                        <div
+                          key={user.uid}
+                          className={`flex items-center justify-between p-2 rounded-md cursor-pointer transition-colors ${members.includes(user.uid) ? 'bg-blue-100 border-blue-200' : 'hover:bg-white'}`}
+                          onClick={() => {
+                            if (members.includes(user.uid)) {
+                              setMembers(members.filter(m => m !== user.uid));
+                            } else {
+                              setMembers([...members, user.uid]);
+                            }
+                          }}
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className={`w-2 h-2 rounded-full ${members.includes(user.uid) ? 'bg-blue-600' : 'bg-gray-300'}`} />
+                            <span className="text-sm font-medium">{user.displayName}</span>
+                          </div>
+                          {members.includes(user.uid) && <Plus size={14} className="rotate-45 text-blue-600" />}
+                        </div>
+                      ))}
+                      {allSystemUsers.length <= 1 && (
+                        <p className="text-xs text-gray-400 text-center py-4">No other members found. Add them in the Members page first.</p>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-gray-400">Click to add/remove members from the project.</p>
+                  </div>
                 </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
-                <Button onClick={handleCreateProject}>Create</Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
+                  <Button onClick={handleCreateProject}>Create</Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {/* Create New Project Card - Always First */}
-          <Card 
+          <Card
             className="group cursor-pointer border-2 border-dashed border-gray-200 hover:border-blue-400 hover:bg-blue-50/30 transition-all flex flex-col items-center justify-center p-8 min-h-[200px]"
             onClick={() => setIsDialogOpen(true)}
           >
@@ -384,8 +623,8 @@ export const Dashboard: React.FC = () => {
               const projectProgress = projectIssues.length > 0 ? Math.round((projectDone / projectIssues.length) * 100) : 0;
 
               return (
-                <Card 
-                  key={project.id} 
+                <Card
+                  key={project.id}
                   className="cursor-pointer border-none shadow-sm hover:shadow-md transition-all group bg-white"
                   onClick={() => navigate(`/projects/${project.id}`)}
                 >
@@ -393,20 +632,20 @@ export const Dashboard: React.FC = () => {
                     <div className="flex justify-between items-start mb-4">
                       <div className="flex items-center gap-2">
                         <div className="px-2 py-1 bg-gray-100 rounded text-[10px] font-bold text-gray-500 uppercase tracking-widest">
-                           {project.key}
+                          {project.key}
                         </div>
                         <div className="flex items-center gap-1">
                           <div className="h-[1px] w-3 bg-gray-300" />
                           <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{project.members.length} members</span>
                         </div>
                       </div>
-                      
+
                       <DropdownMenu>
                         <DropdownMenuTrigger
                           render={
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
+                            <Button
+                              variant="ghost"
+                              size="icon"
                               className="h-8 w-8 text-gray-400 hover:text-gray-900"
                               onClick={(e) => e.stopPropagation()}
                             >
@@ -420,7 +659,7 @@ export const Dashboard: React.FC = () => {
                             <span>Edit Project</span>
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
-                          <DropdownMenuItem 
+                          <DropdownMenuItem
                             onClick={(e) => handleDeleteProject(project.id, e)}
                             className="text-destructive focus:bg-destructive/10 focus:text-destructive"
                           >
@@ -438,26 +677,26 @@ export const Dashboard: React.FC = () => {
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="pt-6 space-y-4">
-                     <div className="space-y-1.5">
-                        <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest">
-                          <span className="text-gray-400">Progress</span>
-                          <span className="text-[#172B4D]">{projectProgress}%</span>
-                        </div>
-                        <div className="h-1 w-full bg-gray-100 rounded-full overflow-hidden">
-                          <div 
-                            className="h-full bg-[#0052CC] transition-all duration-500" 
-                            style={{ width: `${projectProgress}%` }}
-                          />
-                        </div>
-                     </div>
-                     <div className="flex items-center justify-between text-[11px] font-bold text-gray-400 uppercase tracking-widest">
-                        <div className="flex items-center gap-1.5">
-                           <span>{projectIssues.length} issues</span>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                           <span>{projectDone} done</span>
-                        </div>
-                     </div>
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest">
+                        <span className="text-gray-400">Progress</span>
+                        <span className="text-[#172B4D]">{projectProgress}%</span>
+                      </div>
+                      <div className="h-1 w-full bg-gray-100 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-[#0052CC] transition-all duration-500"
+                          style={{ width: `${projectProgress}%` }}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between text-[11px] font-bold text-gray-400 uppercase tracking-widest">
+                      <div className="flex items-center gap-1.5">
+                        <span>{projectIssues.length} issues</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span>{projectDone} done</span>
+                      </div>
+                    </div>
                   </CardContent>
                 </Card>
               );
@@ -490,17 +729,17 @@ export const Dashboard: React.FC = () => {
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
               <Label htmlFor="edit-name">Project Name</Label>
-              <Input 
-                id="edit-name" 
-                value={newProjectName} 
-                onChange={(e) => setNewProjectName(e.target.value)} 
+              <Input
+                id="edit-name"
+                value={newProjectName}
+                onChange={(e) => setNewProjectName(e.target.value)}
               />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="edit-key">Project Key</Label>
-              <Input 
-                id="edit-key" 
-                value={newProjectKey} 
+              <Input
+                id="edit-key"
+                value={newProjectKey}
                 onChange={(e) => setNewProjectKey(e.target.value.toUpperCase())}
                 maxLength={5}
               />
@@ -509,8 +748,8 @@ export const Dashboard: React.FC = () => {
               <Label className="text-xs font-bold text-gray-500 uppercase tracking-widest">Manage Members</Label>
               <div className="max-h-[200px] overflow-y-auto border rounded-md p-2 space-y-1 bg-gray-50/50">
                 {allSystemUsers.filter(u => u.uid !== userProfile?.uid).map(user => (
-                  <div 
-                    key={user.uid} 
+                  <div
+                    key={user.uid}
                     className={`flex items-center justify-between p-2 rounded-md cursor-pointer transition-colors ${members.includes(user.uid) ? 'bg-blue-100 border-blue-200' : 'hover:bg-white'}`}
                     onClick={() => {
                       if (members.includes(user.uid)) {
@@ -532,6 +771,51 @@ export const Dashboard: React.FC = () => {
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>Cancel</Button>
             <Button onClick={handleUpdateProject} className="bg-[#0052CC]">Save Changes</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* AI Daily Standup Dialog */}
+      <Dialog open={isStandupOpen} onOpenChange={setIsStandupOpen}>
+        <DialogContent className="max-w-xl bg-white">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="text-blue-600 w-5 h-5 animate-pulse" />
+              <span>AI Daily Standup Generator</span>
+            </DialogTitle>
+            <DialogDescription>
+              Gemini has compiled your updates based on issues assigned to you.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            {isGeneratingStandup ? (
+              <div className="flex flex-col items-center justify-center py-8 space-y-2">
+                <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+                <span className="text-sm font-semibold text-gray-500">Drafting standup update...</span>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <textarea
+                  className="w-full min-h-[220px] p-3 text-sm border rounded-md font-sans bg-gray-50/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 whitespace-pre-wrap"
+                  value={standupText}
+                  onChange={(e) => setStandupText(e.target.value)}
+                />
+                <p className="text-[10px] text-gray-400 font-medium">Tip: You can edit the text directly before copying.</p>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsStandupOpen(false)}>Close</Button>
+            <Button
+              disabled={isGeneratingStandup || !standupText}
+              onClick={() => {
+                navigator.clipboard.writeText(standupText);
+                toast.success('Standup copied to clipboard!');
+              }}
+              className="bg-[#0052CC]"
+            >
+              Copy to Clipboard
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

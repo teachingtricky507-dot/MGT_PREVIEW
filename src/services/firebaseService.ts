@@ -1,4 +1,4 @@
-import { Project, Issue, Comment, User, Activity, Message } from '../types';
+import { Project, Issue, Comment, User, Activity, Message, TimeLog, Sprint } from '../types';
 
 // Helper to manage local storage
 const getStorage = (key: string) => JSON.parse(localStorage.getItem(`local_db_${key}`) || '[]');
@@ -61,6 +61,7 @@ export const issueService = {
 
   createIssue: async (projectId: string, issue: Partial<Issue>) => {
     const issues = getStorage('issues');
+    const projectIssues = issues.filter((i: any) => i.projectId === projectId);
     const newIssue = {
       ...issue,
       id: Math.random().toString(36).substr(2, 9),
@@ -68,6 +69,10 @@ export const issueService = {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       order: issue.order || 0,
+      type: issue.type || 'TASK',
+      checklist: issue.checklist || [],
+      issueIndex: projectIssues.length + 1,
+      sprintId: issue.sprintId || '',
     };
     issues.push(newIssue);
     setStorage('issues', issues);
@@ -250,4 +255,125 @@ export const commentService = {
     notify(`comments_${issueId}`);
     return newComment;
   },
+};
+
+export const timeLogService = {
+  subscribeToTimeLogs: (projectId: string, callback: (logs: TimeLog[]) => void) => {
+    const key = `timelogs_${projectId}`;
+    if (!listeners[key]) listeners[key] = [];
+    listeners[key].push(callback);
+    
+    const logs = getStorage('timeLogs').filter((l: any) => l.projectId === projectId);
+    callback(logs);
+    
+    return () => {
+      listeners[key] = listeners[key].filter(c => c !== callback);
+    };
+  },
+
+  logTime: async (projectId: string, log: Partial<TimeLog>) => {
+    const logs = getStorage('timeLogs');
+    const newLog = {
+      ...log,
+      id: Math.random().toString(36).substr(2, 9),
+      projectId,
+      createdAt: new Date().toISOString(),
+    } as TimeLog;
+    logs.push(newLog);
+    setStorage('timeLogs', logs);
+    
+    // Also update elapsed time in the issue itself
+    const issues = getStorage('issues');
+    const index = issues.findIndex((i: any) => i.id === log.issueId);
+    if (index !== -1) {
+      const currentSpent = issues[index].timeSpent || 0;
+      issues[index].timeSpent = currentSpent + (log.timeSpent || 0);
+      issues[index].updatedAt = new Date().toISOString();
+      setStorage('issues', issues);
+      notify(`issues_${projectId}`);
+    }
+
+    notify(`timelogs_${projectId}`);
+    return newLog;
+  }
+};
+
+export const sprintService = {
+  subscribeToSprints: (projectId: string, callback: (sprints: Sprint[]) => void) => {
+    const key = `sprints_${projectId}`;
+    if (!listeners[key]) listeners[key] = [];
+    listeners[key].push(callback);
+    
+    const sprints = getStorage('sprints').filter((s: any) => s.projectId === projectId);
+    callback(sprints);
+    
+    return () => {
+      listeners[key] = listeners[key].filter(c => c !== callback);
+    };
+  },
+
+  createSprint: async (projectId: string, name: string) => {
+    const sprints = getStorage('sprints');
+    const newSprint: Sprint = {
+      id: Math.random().toString(36).substr(2, 9),
+      projectId,
+      name,
+      status: 'PLANNING',
+      createdAt: new Date().toISOString(),
+    };
+    sprints.push(newSprint);
+    setStorage('sprints', sprints);
+    notify(`sprints_${projectId}`);
+    return newSprint;
+  },
+
+  startSprint: async (projectId: string, sprintId: string, durationWeeks: number) => {
+    const sprints = getStorage('sprints');
+    const index = sprints.findIndex((s: any) => s.id === sprintId);
+    if (index !== -1) {
+      // Complete other active sprints
+      sprints.forEach((s: any) => {
+        if (s.projectId === projectId && s.status === 'ACTIVE') {
+          s.status = 'COMPLETED';
+          s.endDate = new Date().toISOString();
+        }
+      });
+      
+      sprints[index].status = 'ACTIVE';
+      sprints[index].startDate = new Date().toISOString();
+      sprints[index].endDate = new Date(Date.now() + durationWeeks * 7 * 24 * 60 * 60 * 1000).toISOString();
+      
+      setStorage('sprints', sprints);
+      notify(`sprints_${projectId}`);
+      
+      // Update active sprint ID inside current project context issues
+      notify(`issues_${projectId}`);
+    }
+  },
+
+  completeSprint: async (projectId: string, sprintId: string) => {
+    const sprints = getStorage('sprints');
+    const index = sprints.findIndex((s: any) => s.id === sprintId);
+    if (index !== -1) {
+      sprints[index].status = 'COMPLETED';
+      sprints[index].endDate = new Date().toISOString();
+      setStorage('sprints', sprints);
+      
+      // Move incomplete issues back to backlog
+      const issues = getStorage('issues');
+      let updated = false;
+      issues.forEach((i: any) => {
+        if (i.projectId === projectId && i.sprintId === sprintId && i.status !== 'DONE') {
+          i.sprintId = '';
+          updated = true;
+        }
+      });
+      if (updated) {
+        setStorage('issues', issues);
+        notify(`issues_${projectId}`);
+      }
+      
+      notify(`sprints_${projectId}`);
+    }
+  }
 };

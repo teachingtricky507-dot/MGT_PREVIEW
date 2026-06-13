@@ -9,6 +9,15 @@ export default defineConfig(({mode}) => {
     plugins: [react(), tailwindcss()],
     define: {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+      'import.meta.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+      'process.env.GEMINI_API_KEY_2': JSON.stringify(env.GEMINI_API_KEY_2),
+      'import.meta.env.GEMINI_API_KEY_2': JSON.stringify(env.GEMINI_API_KEY_2),
+      'process.env.GEMINI_API_KEY_3': JSON.stringify(env.GEMINI_API_KEY_3),
+      'import.meta.env.GEMINI_API_KEY_3': JSON.stringify(env.GEMINI_API_KEY_3),
+      'process.env.GEMINI_API_KEY_4': JSON.stringify(env.GEMINI_API_KEY_4),
+      'import.meta.env.GEMINI_API_KEY_4': JSON.stringify(env.GEMINI_API_KEY_4),
+      'process.env.GROQ_API_KEY': JSON.stringify(env.GROQ_API_KEY),
+      'import.meta.env.GROQ_API_KEY': JSON.stringify(env.GROQ_API_KEY),
     },
     resolve: {
       alias: {

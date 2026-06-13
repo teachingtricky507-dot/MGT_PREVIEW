@@ -4,7 +4,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { Issue, Priority, User } from '../types';
 import { Card, CardContent } from './ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
-import { AlertCircle, ArrowUp, ArrowDown, Minus, Calendar, AlignLeft } from 'lucide-react';
+import { AlertCircle, ArrowUp, ArrowDown, Minus, Calendar, AlignLeft, Bug, Sparkles, CheckSquare, Bookmark } from 'lucide-react';
 import { format, isPast, isToday } from 'date-fns';
 import { motion } from 'motion/react';
 
@@ -13,9 +13,10 @@ interface KanbanCardProps {
   isOverlay?: boolean;
   onClick?: () => void;
   assignee?: User;
+  projectKey?: string;
 }
 
-export const KanbanCard: React.FC<KanbanCardProps> = ({ issue, isOverlay, onClick, assignee }) => {
+export const KanbanCard: React.FC<KanbanCardProps> = ({ issue, isOverlay, onClick, assignee, projectKey }) => {
   const {
     attributes,
     listeners,
@@ -43,6 +44,20 @@ export const KanbanCard: React.FC<KanbanCardProps> = ({ issue, isOverlay, onClic
       case 'MEDIUM': return <ArrowUp className="text-orange-500" size={14} />;
       case 'LOW': return <ArrowDown className="text-blue-500" size={14} />;
       default: return <Minus className="text-gray-400" size={14} />;
+    }
+  };
+
+  const getTypeIcon = (type?: string) => {
+    switch (type) {
+      case 'BUG':
+        return <Bug className="text-red-500 fill-red-500/10" size={12} />;
+      case 'FEATURE':
+        return <Sparkles className="text-green-500 fill-green-500/10" size={12} />;
+      case 'EPIC':
+        return <Bookmark className="text-purple-500 fill-purple-500/10" size={12} />;
+      case 'TASK':
+      default:
+        return <CheckSquare className="text-blue-500 fill-blue-500/10" size={12} />;
     }
   };
 
@@ -75,19 +90,43 @@ export const KanbanCard: React.FC<KanbanCardProps> = ({ issue, isOverlay, onClic
         <CardContent className="p-3.5 space-y-3.5">
           <div className="space-y-1.5">
             <div className="flex items-start justify-between gap-2">
-              <p className="text-[13px] font-medium text-[#172B4D] leading-tight group-hover:text-[#0052CC] transition-colors line-clamp-2">
+              <p className="text-[13px] font-medium text-[#172B4D] leading-tight group-hover:text-[#0052CC] transition-colors line-clamp-2 font-sans">
                 {issue.title}
               </p>
               {issue.description && <AlignLeft size={12} className="text-gray-300 mt-0.5" />}
             </div>
           </div>
 
+          {issue.checklist && issue.checklist.length > 0 && (
+            <div className="space-y-1">
+              <div className="flex justify-between items-center text-[9px] font-bold text-gray-400">
+                <span className="flex items-center gap-1 font-mono">
+                  <CheckSquare size={10} />
+                  <span>SUBTASKS</span>
+                </span>
+                <span className="font-mono">
+                  {issue.checklist.filter(item => item.completed).length}/{issue.checklist.length}
+                </span>
+              </div>
+              <div className="h-1 w-full bg-gray-100 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-blue-500 transition-all duration-300" 
+                  style={{ 
+                    width: `${(issue.checklist.filter(item => item.completed).length / 
+                      issue.checklist.length) * 100}%` 
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
           <div className="flex items-center justify-between pt-1">
             <div className="flex items-center gap-2.5">
               <div className="flex items-center gap-1.5 p-1 -m-1 rounded hover:bg-gray-100 transition-colors">
+                {getTypeIcon(issue.type)}
                 {getPriorityIcon(issue.priority)}
                 <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest font-mono">
-                  {issue.id.substring(0, 4).toUpperCase()}
+                  {projectKey || 'PROJ'}-{issue.issueIndex || 1}
                 </span>
               </div>
               
