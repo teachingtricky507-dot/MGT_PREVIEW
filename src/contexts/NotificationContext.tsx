@@ -1,6 +1,4 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, orderBy, limit, addDoc, serverTimestamp, doc, updateDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'sonner';
 
@@ -11,7 +9,7 @@ interface Notification {
   message: string;
   read: boolean;
   type: 'info' | 'success' | 'warning' | 'error';
-  createdAt: any;
+  createdAt: string;
 }
 
 interface NotificationContextType {
@@ -29,50 +27,46 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   useEffect(() => {
     if (!userProfile) return;
-
-    const q = query(
-      collection(db, 'notifications'),
-      where('userId', '==', userProfile.uid),
-      orderBy('createdAt', 'desc'),
-      limit(20)
-    );
-
-    const unsub = onSnapshot(q, (snapshot) => {
-      const newNotifications = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Notification[];
-      
-      // Show toast for new unread notifications
-      const latest = newNotifications[0];
-      if (latest && !latest.read && (!notifications.length || latest.id !== notifications[0].id)) {
-        toast(latest.title, { description: latest.message });
+    try {
+      const stored = localStorage.getItem(`notifications_${userProfile.uid}`);
+      if (stored) {
+        setNotifications(JSON.parse(stored));
       }
-
-      setNotifications(newNotifications);
-    });
-
-    return unsub;
+    } catch (e) {}
   }, [userProfile?.uid]);
 
   const markAsRead = async (id: string) => {
-    try {
-      const docRef = doc(db, 'notifications', id);
-      await updateDoc(docRef, { read: true });
-    } catch (error) {
-      console.error("Failed to mark notification as read:", error);
-    }
+    setNotifications(prev => {
+      const updated = prev.map(n => n.id === id ? { ...n, read: true } : n);
+      if (userProfile) {
+        localStorage.setItem(`notifications_${userProfile.uid}`, JSON.stringify(updated));
+      }
+      return updated;
+    });
   };
 
   const sendNotification = async (userId: string, title: string, message: string) => {
-    await addDoc(collection(db, 'notifications'), {
+    const newNotif: Notification = {
+      id: Math.random().toString(36).substring(2, 9),
       userId,
       title,
       message,
       read: false,
       type: 'info',
-      createdAt: serverTimestamp()
+      createdAt: new Date().toISOString()
+    };
+    
+    setNotifications(prev => {
+      const updated = [newNotif, ...prev];
+      if (userProfile && userId === userProfile.uid) {
+        localStorage.setItem(`notifications_${userProfile.uid}`, JSON.stringify(updated));
+      }
+      return updated;
     });
+    
+    if (userId === userProfile?.uid) {
+      toast(title, { description: message });
+    }
   };
 
   const unreadCount = notifications.filter(n => !n.read).length;

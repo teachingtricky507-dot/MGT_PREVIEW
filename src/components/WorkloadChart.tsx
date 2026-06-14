@@ -38,7 +38,7 @@ export const WorkloadChart: React.FC<WorkloadChartProps> = ({ issues, members })
   return (
     <div className="h-[300px] w-full bg-white dark:bg-card p-4 rounded-xl border border-border">
        <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-4">Team Workload</h4>
-      <ResponsiveContainer width="100%" height="100%">
+      <ResponsiveContainer width="100%" height="100%" minHeight={1} minWidth={1}>
         <BarChart data={data} layout="vertical" margin={{ left: 20 }}>
           <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
           <XAxis type="number" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} />

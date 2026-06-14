@@ -326,7 +326,7 @@ export const Timesheets: React.FC = () => {
             </div>
           </CardHeader>
           <CardContent className="p-0 h-64">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minHeight={1} minWidth={1}>
               <BarChart data={weekChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F4F5F7" />
                 <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fill: '#9CA3AF', fontSize: 10, fontWeight: 600 }} />

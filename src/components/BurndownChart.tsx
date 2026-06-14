@@ -54,7 +54,7 @@ export const BurndownChart: React.FC<BurndownChartProps> = ({ issues }) => {
           </div>
         </div>
       </div>
-      <ResponsiveContainer width="100%" height="100%">
+      <ResponsiveContainer width="100%" height="100%" minHeight={1} minWidth={1}>
         <AreaChart data={data}>
           <defs>
             <linearGradient id="colorRemaining" x1="0" y1="0" x2="0" y2="1">

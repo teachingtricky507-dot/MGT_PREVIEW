@@ -16,6 +16,7 @@ export const LoginView: React.FC = () => {
   const [loginIdentifier, setLoginIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
   
   const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
   const [resending, setResending] = useState(false);
@@ -33,9 +34,10 @@ export const LoginView: React.FC = () => {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!loginIdentifier.trim()) {
-      toast.error('Please enter your Name, ID or Email');
+      setLoginError('Please enter your Name, ID or Email');
       return;
     }
+    setLoginError(null);
     setUnverifiedEmail(null);
     setLoading(true);
     try {
@@ -46,9 +48,9 @@ export const LoginView: React.FC = () => {
       console.error(err);
       if (err.message === 'EMAIL_UNVERIFIED') {
         setUnverifiedEmail(loginIdentifier.trim());
-        toast.warning('Email verification required.');
+        setLoginError('Email verification required.');
       } else {
-        toast.error(err.message || 'Login failed. Please try again.');
+        setLoginError(err.message || 'Login failed. Please try again.');
       }
     } finally {
       setLoading(false);
@@ -310,6 +312,17 @@ export const LoginView: React.FC = () => {
                     </motion.div>
                   )}
 
+                  {loginError && !unverifiedEmail && (
+                    <motion.div 
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      className="bg-red-50 border border-red-100 text-red-900 rounded-2xl p-4 text-xs flex items-center gap-2.5"
+                    >
+                      <AlertCircle className="text-red-600 flex-shrink-0" size={16} />
+                      <p className="font-semibold">{loginError}</p>
+                    </motion.div>
+                  )}
+
                   <form onSubmit={handleLogin} className="space-y-5">
                     <div className="space-y-2">
                       <Label htmlFor="name" className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Name, ID or Email</Label>
@@ -321,7 +334,10 @@ export const LoginView: React.FC = () => {
                           placeholder="Username or email address" 
                           required 
                           value={loginIdentifier}
-                          onChange={(e) => setLoginIdentifier(e.target.value)}
+                          onChange={(e) => {
+                            setLoginIdentifier(e.target.value);
+                            setLoginError(null);
+                          }}
                           className="bg-gray-50/50 border-gray-200 dark:bg-white/5 dark:border-white/10 dark:text-white h-12 pl-12 rounded-2xl focus:ring-2 focus:ring-[#0052CC]/50 transition-all"
                         />
                       </div>
@@ -336,7 +352,10 @@ export const LoginView: React.FC = () => {
                           placeholder="••••••••"
                           required 
                           value={password}
-                          onChange={(e) => setPassword(e.target.value)}
+                          onChange={(e) => {
+                            setPassword(e.target.value);
+                            setLoginError(null);
+                          }}
                           className="bg-gray-50/50 border-gray-200 dark:bg-white/5 dark:border-white/10 dark:text-white h-12 pl-12 rounded-2xl focus:ring-2 focus:ring-[#0052CC]/50 transition-all"
                         />
                       </div>

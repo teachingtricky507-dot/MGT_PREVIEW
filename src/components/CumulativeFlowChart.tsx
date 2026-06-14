@@ -48,7 +48,7 @@ export const CumulativeFlowChart: React.FC<CumulativeFlowChartProps> = ({ issues
         <h3 className="text-sm font-bold text-[#172B4D]">Cumulative Flow Diagram (CFD)</h3>
       </div>
       <div className="h-64 w-full">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minHeight={1} minWidth={1}>
           <AreaChart
             data={data}
             margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
