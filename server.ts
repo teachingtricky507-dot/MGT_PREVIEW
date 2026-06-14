@@ -1,6 +1,7 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 import { DatabaseSync } from "node:sqlite";
 import nodemailer from "nodemailer";
@@ -177,7 +178,7 @@ dbObj.exec(`
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = process.env.PORT || 3000;
 
   // JSON parsing middleware
   app.use(express.json());
@@ -983,15 +984,24 @@ async function startServer() {
   });
 
   // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
+  const distPath = path.join(process.cwd(), "dist");
+  const isProduction = process.env.NODE_ENV === "production" || process.env.RENDER || fs.existsSync(path.join(distPath, "index.html"));
+
+  if (!isProduction) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
+    // Serve static files with proper MIME types
+    app.use(express.static(distPath, {
+      setHeaders: (res, path) => {
+        if (path.endsWith('.css')) res.setHeader('Content-Type', 'text/css');
+        if (path.endsWith('.js')) res.setHeader('Content-Type', 'application/javascript');
+      }
+    }));
+    
     app.get("*", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });
