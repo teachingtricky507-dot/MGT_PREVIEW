@@ -9,6 +9,7 @@ import { Settings } from './pages/Settings';
 import { Members } from './pages/Members';
 import { Timesheets } from './pages/Timesheets';
 import { AiAssistant } from './pages/AiAssistant';
+import { VerifyEmail } from './pages/VerifyEmail';
 import { Toaster } from './components/ui/sonner';
 import { TooltipProvider } from './components/ui/tooltip';
 
@@ -88,6 +89,7 @@ export default function App() {
                 </PrivateRoute>
               }
             />
+            <Route path="/verify-email" element={<VerifyEmail />} />
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>
           <Toaster position="bottom-right" />

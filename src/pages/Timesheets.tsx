@@ -136,9 +136,29 @@ export const Timesheets: React.FC = () => {
     return {
       name: format(day, 'EEE'),
       date: format(day, 'MMM d'),
-      Hours: parseFloat((totalMinutes / 60).toFixed(1)),
+      Hours: parseFloat((totalMinutes / 60).toFixed(2)),
+      totalMinutes: totalMinutes,
     };
   });
+
+  const weekTotalMinutes = weekChartData.reduce((acc, d) => acc + d.totalMinutes, 0);
+  const weekTotalHrs = Math.floor(weekTotalMinutes / 60);
+  const weekTotalMins = weekTotalMinutes % 60;
+
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      const data = payload[0].payload;
+      const hrs = Math.floor(data.totalMinutes / 60);
+      const mins = data.totalMinutes % 60;
+      return (
+        <div className="bg-white p-3 border rounded-lg shadow-lg text-sm">
+          <p className="font-bold text-[#172B4D] mb-1">{data.date}</p>
+          <p className="text-[#0052CC] font-bold">{hrs}h {mins}m logged</p>
+        </div>
+      );
+    }
+    return null;
+  };
 
   // Calculate workload allocation per user
   const workloadData = teamMembers.map((member) => {
@@ -177,6 +197,22 @@ export const Timesheets: React.FC = () => {
       loadIcon,
     };
   });
+
+  // Calculate unassigned workload
+  const unassignedIssues = issues.filter(i => (!i.assigneeId || i.assigneeId === 'unassigned') && i.status !== 'DONE');
+  if (unassignedIssues.length > 0) {
+    const unassignedEstTime = unassignedIssues.reduce((acc, i) => acc + (i.estimatedTime || 120), 0);
+    const unassignedHours = Math.round(unassignedEstTime / 60);
+    workloadData.push({
+      member: { uid: 'unassigned', displayName: 'Unassigned', email: 'Needs to be assigned', photoURL: '' } as User,
+      totalEstHours: unassignedHours,
+      activeCount: unassignedIssues.length,
+      loadBadge: 'Unassigned',
+      loadColor: 'bg-gray-100 text-gray-700 border-gray-200',
+      cardAccent: 'border-l-4 border-l-gray-300',
+      loadIcon: <ShieldAlert className="w-4 h-4 text-gray-500" />
+    });
+  }
 
   return (
     <div className="space-y-8 pb-12 font-sans">
@@ -285,7 +321,7 @@ export const Timesheets: React.FC = () => {
                 <CardDescription>Visual breakdown of hours you logged (Mon - Sun)</CardDescription>
               </div>
               <Badge variant="outline" className="text-[10px] font-bold text-blue-600 bg-blue-50/50">
-                {weekChartData.reduce((acc, d) => acc + d.Hours, 0)} Total Hours Logged
+                {weekTotalHrs}h {weekTotalMins}m Total Time Logged
               </Badge>
             </div>
           </CardHeader>
@@ -294,8 +330,18 @@ export const Timesheets: React.FC = () => {
               <BarChart data={weekChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F4F5F7" />
                 <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fill: '#9CA3AF', fontSize: 10, fontWeight: 600 }} />
-                <YAxis tickLine={false} axisLine={false} tick={{ fill: '#9CA3AF', fontSize: 10, fontWeight: 600 }} />
-                <Tooltip contentStyle={{ background: '#FFF', border: 'none', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }} />
+                <YAxis 
+                  tickLine={false} 
+                  axisLine={false} 
+                  tick={{ fill: '#9CA3AF', fontSize: 10, fontWeight: 600 }} 
+                  tickFormatter={(val) => {
+                    const h = Math.floor(val);
+                    const m = Math.round((val - h) * 60);
+                    if (h === 0 && m === 0) return '0';
+                    return m > 0 ? `${h}h ${m}m` : `${h}h`;
+                  }}
+                />
+                <Tooltip content={<CustomTooltip />} cursor={{ fill: '#F4F5F7' }} />
                 <Bar dataKey="Hours" fill="#0052CC" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>

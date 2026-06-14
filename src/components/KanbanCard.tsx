@@ -5,7 +5,7 @@ import { Issue, Priority, User } from '../types';
 import { Card, CardContent } from './ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { Badge } from './ui/badge';
-import { AlertCircle, ArrowUp, ArrowDown, Minus, Calendar, AlignLeft, Bug, Sparkles, CheckSquare, Bookmark } from 'lucide-react';
+import { AlertCircle, ArrowUp, ArrowDown, Minus, Calendar, AlignLeft, Bug, Sparkles, CheckSquare, Bookmark, Crown } from 'lucide-react';
 import { format, isPast, isToday } from 'date-fns';
 import { motion } from 'motion/react';
 
@@ -14,11 +14,12 @@ interface KanbanCardProps {
   isOverlay?: boolean;
   onClick?: () => void;
   assignee?: User;
+  coordinator?: User;
   projectKey?: string;
   showStatus?: boolean;
 }
 
-export const KanbanCard: React.FC<KanbanCardProps> = ({ issue, isOverlay, onClick, assignee, projectKey, showStatus }) => {
+export const KanbanCard: React.FC<KanbanCardProps> = ({ issue, isOverlay, onClick, assignee, coordinator, projectKey, showStatus }) => {
   const {
     attributes,
     listeners,
@@ -155,7 +156,23 @@ export const KanbanCard: React.FC<KanbanCardProps> = ({ issue, isOverlay, onClic
               )}
             </div>
 
-            <div className="flex -space-x-1 items-center">
+            <div className="flex items-center gap-1.5">
+              {/* Coordinator badge */}
+              {coordinator && (
+                <div
+                  title={`Coordinator: ${coordinator.displayName}`}
+                  className="flex items-center gap-0.5 px-1 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-600"
+                >
+                  <Crown size={8} className="flex-shrink-0" />
+                  <Avatar className="w-4 h-4 ring-1 ring-amber-300 flex-shrink-0">
+                    <AvatarImage src={coordinator.photoURL} />
+                    <AvatarFallback className="bg-amber-100 text-amber-700 text-[7px] font-bold">
+                      {coordinator.displayName?.charAt(0) || 'C'}
+                    </AvatarFallback>
+                  </Avatar>
+                </div>
+              )}
+              {/* Assignee badge */}
               {issue.assigneeId ? (
                 <Avatar className="w-5 h-5 ring-2 ring-white flex-shrink-0">
                   <AvatarImage src={assignee?.photoURL} />

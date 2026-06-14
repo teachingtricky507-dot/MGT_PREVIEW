@@ -184,7 +184,7 @@ ${JSON.stringify(projectContext)}
 
 Based on this data, answer the user's question: "${query}".
 Keep your response professional, precise, direct, and directly actionable. Use bullet points or charts if relevant.`,
-        `You are an expert context-aware AI Project Management Assistant for the "Emergent" platform.`
+        `You are an expert context-aware AI Project Management Assistant for the "MGT" platform.`
       );
     } catch (error) {
       console.error("AI Assistant Error:", error);

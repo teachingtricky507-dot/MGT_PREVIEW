@@ -18,16 +18,20 @@ interface WorkloadChartProps {
 
 export const WorkloadChart: React.FC<WorkloadChartProps> = ({ issues, members }) => {
   const data = members.map(member => {
-    const taskCount = issues.filter(i => i.assigneeId === member.uid).length;
-    const doneCount = issues.filter(i => i.assigneeId === member.uid && i.status === 'DONE').length;
-    
+    const activeTasks = issues.filter(i => i.assigneeId === member.uid && i.status !== 'DONE').length;
     return {
       name: member.displayName.split(' ')[0],
-      tasks: taskCount,
-      done: doneCount,
-      pending: taskCount - doneCount
+      'Active Tasks': activeTasks,
     };
   });
+
+  const unassignedTasks = issues.filter(i => (!i.assigneeId || i.assigneeId === 'unassigned') && i.status !== 'DONE').length;
+  if (unassignedTasks > 0) {
+    data.push({
+      name: 'Unassigned',
+      'Active Tasks': unassignedTasks,
+    });
+  }
 
   const COLORS = ['#3b82f6', '#60a5fa', '#93c5fd', '#bfdbfe'];
 
@@ -49,7 +53,7 @@ export const WorkloadChart: React.FC<WorkloadChartProps> = ({ issues, members })
              contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontSize: '12px' }}
              cursor={{ fill: '#f8fafc' }}
           />
-          <Bar dataKey="tasks" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={20}>
+          <Bar dataKey="Active Tasks" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={20}>
             {data.map((entry, index) => (
               <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
             ))}

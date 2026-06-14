@@ -6,13 +6,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Avatar, AvatarFallback, AvatarImage } from '../components/ui/avatar';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
-import { Search, Mail, Copy, Check, Filter, UserPlus, LogOut } from 'lucide-react';
+import { Search, Mail, Copy, Check, Filter, UserPlus, LogOut, Trash2, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { Label } from '../components/ui/label';
 
 export const Members: React.FC = () => {
-  const { userProfile, logout } = useAuth();
+  const { userProfile, logout, updateProfile } = useAuth();
   const [members, setMembers] = useState<User[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -21,6 +21,82 @@ export const Members: React.FC = () => {
   const [newName, setNewName] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  // Avatar Edit State
+  const [isAvatarModalOpen, setIsAvatarModalOpen] = useState(false);
+  const [avatarInput, setAvatarInput] = useState('');
+  const [isSavingAvatar, setIsSavingAvatar] = useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Image is too large. Max 5MB allowed.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_SIZE = 256;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_SIZE) {
+            height *= MAX_SIZE / width;
+            width = MAX_SIZE;
+          }
+        } else {
+          if (height > MAX_SIZE) {
+            width *= MAX_SIZE / height;
+            height = MAX_SIZE;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+          setAvatarInput(dataUrl);
+        }
+      };
+      if (typeof event.target?.result === 'string') {
+        img.src = event.target.result;
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleUpdateAvatar = async () => {
+    if (!userProfile) return;
+    setIsSavingAvatar(true);
+    try {
+      let finalUrl = userProfile.photoURL;
+      if (avatarInput) {
+        if (avatarInput.startsWith('http') || avatarInput.startsWith('data:')) finalUrl = avatarInput;
+        else if (Array.from(avatarInput).length <= 2) {
+          finalUrl = `data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">${encodeURIComponent(avatarInput)}</text></svg>`;
+        } else {
+          finalUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(avatarInput)}`;
+        }
+      }
+      await updateProfile(userProfile.displayName, finalUrl);
+      toast.success("Avatar updated successfully!");
+      setIsAvatarModalOpen(false);
+      setAvatarInput('');
+    } catch(e) {
+      toast.error("Failed to update avatar");
+    } finally {
+      setIsSavingAvatar(false);
+    }
+  };
 
   useEffect(() => {
     let unsub: (() => void) | undefined;
@@ -47,30 +123,54 @@ export const Members: React.FC = () => {
     };
   }, [userProfile, refreshTrigger]);
 
-  const handleCreateMember = () => {
+  const isSuperAdmin = userProfile?.email === "deepeshkumarbarway@gmail.com";
+
+  const handleCreateMember = async () => {
     if (!newName.trim() || !newEmail.trim()) {
       toast.error('Please fill in all fields');
       return;
     }
 
-    const uid = newName.toLowerCase().replace(/\s+/g, '_') + '_' + Math.random().toString(36).substr(2, 4);
-    const newMember: User = {
-      uid,
-      displayName: newName,
-      email: newEmail,
-      photoURL: `https://api.dicebear.com/7.x/avataaars/svg?seed=${uid}`,
-      createdAt: new Date().toISOString(),
-    };
-
-    const profiles = JSON.parse(localStorage.getItem('local_profiles') || '{}');
-    profiles[uid] = newMember;
-    localStorage.setItem('local_profiles', JSON.stringify(profiles));
-    
-    setRefreshTrigger(prev => prev + 1);
+    // Close modal instantly for snappy UI
     setIsCreateModalOpen(false);
+    
+    // Save values before clearing
+    const memberName = newName;
+    const memberEmail = newEmail;
+
     setNewName('');
     setNewEmail('');
-    toast.success('Member created successfully');
+
+    try {
+      const createdUser = await userService.createMember(memberName, memberEmail);
+      
+      const profiles = JSON.parse(localStorage.getItem('local_profiles') || '{}');
+      profiles[createdUser.uid] = createdUser;
+      localStorage.setItem('local_profiles', JSON.stringify(profiles));
+      
+      setRefreshTrigger(prev => prev + 1);
+      toast.success('Member created successfully');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to create member');
+      // If it fails, maybe we could reopen the modal, but usually just showing an error is fine.
+    }
+  };
+
+  const handleDeleteMember = async (uid: string) => {
+    if (confirm("Are you sure you want to delete this member?")) {
+      try {
+        await userService.deleteUser(uid);
+        
+        const profiles = JSON.parse(localStorage.getItem('local_profiles') || '{}');
+        delete profiles[uid];
+        localStorage.setItem('local_profiles', JSON.stringify(profiles));
+        
+        setRefreshTrigger(prev => prev + 1);
+        toast.success("Member deleted successfully");
+      } catch (err: any) {
+        toast.error(err.message || "Failed to delete member");
+      }
+    }
   };
 
   const copyId = (id: string) => {
@@ -100,12 +200,76 @@ export const Members: React.FC = () => {
       <Card className="border-none shadow-lg bg-gradient-to-br from-[#172B4D] to-[#0052CC] text-white overflow-hidden">
         <CardContent className="p-8">
           <div className="flex flex-col md:flex-row items-center gap-8">
-            <Avatar className="w-24 h-24 ring-4 ring-white/20 shadow-2xl">
-              <AvatarImage src={userProfile?.photoURL} />
-              <AvatarFallback className="bg-white/10 text-white text-3xl font-bold">
-                {userProfile?.displayName.charAt(0)}
-              </AvatarFallback>
-            </Avatar>
+            <div className="relative group">
+              <Avatar className="w-24 h-24 ring-4 ring-white/20 shadow-2xl transition-all group-hover:blur-[2px]">
+                <AvatarImage src={userProfile?.photoURL} />
+                <AvatarFallback className="bg-white/10 text-white text-3xl font-bold">
+                  {userProfile?.displayName.charAt(0)}
+                </AvatarFallback>
+              </Avatar>
+              <Dialog open={isAvatarModalOpen} onOpenChange={setIsAvatarModalOpen}>
+                <DialogTrigger asChild>
+                  <button className="absolute inset-0 bg-black/50 rounded-full opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white text-xs font-bold w-24 h-24">
+                    Edit Avatar
+                  </button>
+                </DialogTrigger>
+                <DialogContent className="max-w-sm">
+                  <DialogHeader>
+                    <DialogTitle>Update Avatar</DialogTitle>
+                    <DialogDescription>Type an emoji, a word, paste a URL, or upload your own photo.</DialogDescription>
+                  </DialogHeader>
+                  <div className="py-4 space-y-4">
+                    <div className="flex justify-center">
+                      <Avatar className="w-20 h-20 shadow-md">
+                        <AvatarImage src={
+                          avatarInput 
+                            ? (avatarInput.startsWith('http') || avatarInput.startsWith('data:') 
+                                ? avatarInput 
+                                : Array.from(avatarInput).length <= 2 
+                                  ? `data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">${encodeURIComponent(avatarInput)}</text></svg>`
+                                  : `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(avatarInput)}`)
+                            : userProfile?.photoURL
+                        } />
+                        <AvatarFallback>{userProfile?.displayName.charAt(0)}</AvatarFallback>
+                      </Avatar>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs font-bold text-gray-500 uppercase">Avatar Input</Label>
+                        <Button 
+                          type="button" 
+                          variant="ghost" 
+                          size="sm" 
+                          className="h-6 text-[10px] text-blue-600 hover:text-blue-700 font-bold px-2"
+                          onClick={() => fileInputRef.current?.click()}
+                        >
+                          <Upload size={10} className="mr-1" />
+                          UPLOAD FILE
+                        </Button>
+                        <input 
+                          type="file" 
+                          ref={fileInputRef} 
+                          className="hidden" 
+                          accept="image/*" 
+                          onChange={handleFileUpload} 
+                        />
+                      </div>
+                      <Input 
+                        placeholder="e.g. 😎 or 'cool_avatar'" 
+                        value={avatarInput}
+                        onChange={(e) => setAvatarInput(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setIsAvatarModalOpen(false)}>Cancel</Button>
+                    <Button onClick={handleUpdateAvatar} disabled={isSavingAvatar || !avatarInput}>
+                      {isSavingAvatar ? 'Saving...' : 'Save Avatar'}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </div>
             <div className="flex-1 space-y-4 text-center md:text-left">
               <div>
                 <span className="text-[10px] font-bold text-blue-200 uppercase tracking-[0.2em]">Current Session</span>
@@ -236,10 +400,24 @@ export const Members: React.FC = () => {
                  </div>
                </div>
                
-               {member.uid === userProfile?.uid && (
+               {member.uid === userProfile?.uid ? (
                  <div className="absolute top-4 right-4">
                     <span className="text-[8px] font-bold uppercase tracking-widest bg-gray-100 text-gray-400 px-2 py-1 rounded">You</span>
                  </div>
+               ) : (
+                 isSuperAdmin && (
+                   <div className="absolute top-4 right-4">
+                     <Button 
+                       variant="ghost" 
+                       size="sm" 
+                       className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-full flex items-center justify-center transition-colors cursor-pointer"
+                       onClick={() => handleDeleteMember(member.uid)}
+                       title="Delete Member"
+                     >
+                       <Trash2 size={16} />
+                     </Button>
+                   </div>
+                 )
                )}
             </CardHeader>
             <CardContent className="pt-6 space-y-4">

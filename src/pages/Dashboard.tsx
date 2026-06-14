@@ -18,6 +18,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Badge } from '../components/ui/badge';
 import { ActivityFeed } from '../components/ActivityFeed';
+import { IssueModal } from '../components/IssueModal';
 import { aiService } from '../services/aiService';
 import { Sparkles, Loader2, Download } from 'lucide-react';
 import { toast } from 'sonner';
@@ -28,6 +29,7 @@ export const Dashboard: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [allIssues, setAllIssues] = useState<Issue[]>([]);
   const [allActivities, setAllActivities] = useState<ActivityType[]>([]);
+  const [selectedIssue, setSelectedIssue] = useState<Issue | null>(null);
   const [teamMembers, setTeamMembers] = useState<User[]>([]);
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectKey, setNewProjectKey] = useState('');
@@ -164,34 +166,41 @@ export const Dashboard: React.FC = () => {
   const handleCreateProject = async () => {
     if (!userProfile || !newProjectName || !newProjectKey) return;
 
-    await projectService.createProject({
+    // Close modal and clear state immediately for snappy UI
+    setIsDialogOpen(false);
+    const data = {
       name: newProjectName,
       key: newProjectKey.toUpperCase(),
       description: '',
       ownerId: userProfile.uid,
       members: [userProfile.uid, ...members],
-    });
-
+    };
+    
     setNewProjectName('');
     setNewProjectKey('');
     setMembers([]);
-    setIsDialogOpen(false);
+
+    await projectService.createProject(data);
   };
 
   const handleUpdateProject = async () => {
     if (!projectToEdit || !newProjectName || !newProjectKey) return;
 
-    await projectService.updateProject(projectToEdit.id, {
+    // Close modal and clear state immediately for snappy UI
+    setIsEditDialogOpen(false);
+    const projectId = projectToEdit.id;
+    const data = {
       name: newProjectName,
       key: newProjectKey.toUpperCase(),
       members: [userProfile!.uid, ...members],
-    });
+    };
 
     setNewProjectName('');
     setNewProjectKey('');
     setMembers([]);
-    setIsEditDialogOpen(false);
     setProjectToEdit(null);
+
+    await projectService.updateProject(projectId, data);
   };
 
   const handleDeleteProject = async (projectId: string, e: React.MouseEvent) => {
@@ -380,7 +389,7 @@ export const Dashboard: React.FC = () => {
       <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
         {[
           { label: 'PROJECTS', value: projects.length, desc: 'Active workspaces', icon: Layout },
-          { label: 'TOTAL ISSUES', value: allIssues.length, desc: `${allIssues.filter(i => i.status !== 'DONE').length} open`, icon: Activity },
+          { label: 'ACTIVE ISSUES', value: allIssues.filter(i => i.status !== 'DONE').length, desc: `${allIssues.length} total across projects`, icon: Activity },
           { label: 'ASSIGNED TO YOU', value: assignedToMe.length, desc: 'Open tasks on your plate', icon: Users },
           { label: 'COMPLETION', value: `${completionRate}%`, desc: `${completedIssues.length} done`, icon: CheckCircle2 },
         ].map((stat, i) => (
@@ -494,19 +503,83 @@ export const Dashboard: React.FC = () => {
         </Card>
       </div>
 
-      {/* Activity Feed Section */}
-      <Card className="border-none shadow-sm bg-white overflow-hidden">
-        <CardHeader className="pb-6 border-b border-gray-50">
-          <div className="flex items-center gap-2">
-            <Activity className="w-4 h-4 text-gray-400" />
-            <div className="h-[1px] w-4 bg-gray-300" />
-            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Recent Activity</span>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* Assigned to You tasks list */}
+        <Card className="border-none shadow-sm bg-white overflow-hidden flex flex-col justify-between">
+          <div>
+            <CardHeader className="pb-6 border-b border-gray-50 flex items-center justify-between flex-row">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-gray-400" />
+                <div className="h-[1px] w-4 bg-gray-300" />
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Assigned to You</span>
+              </div>
+              <Badge className="bg-blue-100 text-blue-800 font-bold hover:bg-blue-100 h-5 text-[10px] rounded-full border-none">
+                {assignedToMe.length} Open
+              </Badge>
+            </CardHeader>
+            <CardContent className="p-6">
+              <div className="space-y-2.5 max-h-[350px] overflow-y-auto pr-1 custom-scrollbar">
+                {assignedToMe.length === 0 ? (
+                  <div className="py-12 text-center text-gray-400 italic text-xs">
+                    No active tasks assigned to you. Enjoy your clear day!
+                  </div>
+                ) : (
+                  assignedToMe.map((issue) => {
+                    const proj = projects.find(p => p.id === issue.projectId);
+                    return (
+                      <div
+                        key={issue.id}
+                        onClick={() => setSelectedIssue(issue)}
+                        className="flex items-center justify-between p-3 rounded-lg border border-gray-100 hover:border-blue-200 hover:bg-blue-50/10 cursor-pointer transition-all text-xs"
+                      >
+                        <div className="flex flex-col gap-1 min-w-0 flex-1 mr-4">
+                          <div className="flex items-center gap-2 text-[10px] font-bold text-gray-400 tracking-wider">
+                            <span className="font-mono text-blue-600 uppercase">{proj?.key || 'PROJ'}-{issue.issueIndex || 1}</span>
+                            <span>•</span>
+                            <span className="truncate max-w-[120px]">{proj?.name || 'Workspace'}</span>
+                          </div>
+                          <span className="font-semibold text-gray-700 truncate">{issue.title}</span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <Badge className={`text-[8px] font-extrabold uppercase px-1.5 py-0.5 border-none ${
+                            issue.priority === 'URGENT' ? 'bg-red-100 text-red-700' :
+                            issue.priority === 'HIGH' ? 'bg-orange-100 text-orange-700' :
+                            issue.priority === 'MEDIUM' ? 'bg-blue-100 text-blue-700' :
+                            'bg-gray-100 text-gray-500'
+                          }`}>
+                            {issue.priority}
+                          </Badge>
+                          <Badge className={`text-[8px] font-extrabold uppercase px-1.5 py-0.5 border-none ${
+                            issue.status === 'TESTING' ? 'bg-orange-50 text-orange-700' :
+                            issue.status === 'IN_PROGRESS' ? 'bg-blue-50 text-blue-700' :
+                            'bg-gray-100 text-gray-600'
+                          }`}>
+                            {issue.status === 'IN_PROGRESS' ? 'In Progress' : issue.status}
+                          </Badge>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </CardContent>
           </div>
-        </CardHeader>
-        <CardContent className="p-6">
-          <ActivityFeed activities={allActivities} users={teamMembers} />
-        </CardContent>
-      </Card>
+        </Card>
+
+        {/* Activity Feed Section */}
+        <Card className="border-none shadow-sm bg-white overflow-hidden">
+          <CardHeader className="pb-6 border-b border-gray-50">
+            <div className="flex items-center gap-2">
+              <Activity className="w-4 h-4 text-gray-400" />
+              <div className="h-[1px] w-4 bg-gray-300" />
+              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Recent Activity</span>
+            </div>
+          </CardHeader>
+          <CardContent className="p-6">
+            <ActivityFeed activities={allActivities} users={teamMembers} />
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Projects List Section */}
       <div className="space-y-6">
@@ -819,6 +892,16 @@ export const Dashboard: React.FC = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {selectedIssue && (
+        <IssueModal
+          issue={selectedIssue}
+          isOpen={!!selectedIssue}
+          onClose={() => setSelectedIssue(null)}
+          project={projects.find((p) => p.id === selectedIssue.projectId) || null}
+          members={teamMembers}
+        />
+      )}
     </div>
   );
 };

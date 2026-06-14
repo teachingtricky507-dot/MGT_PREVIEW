@@ -1,28 +1,93 @@
 import { Project, Issue, Comment, User, Activity, Message, TimeLog, Sprint } from '../types';
+import { db } from '../lib/firebase';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 
-// Helper to manage local storage
-const getStorage = (key: string) => JSON.parse(localStorage.getItem(`local_db_${key}`) || '[]');
-const setStorage = (key: string, data: any) => localStorage.setItem(`local_db_${key}`, JSON.stringify(data));
+const sendSystemNotification = async (userId: string, title: string, message: string) => {
+  if (!userId) return;
+  try {
+    await addDoc(collection(db, 'notifications'), {
+      userId,
+      title,
+      message,
+      read: false,
+      type: 'info',
+      createdAt: serverTimestamp()
+    });
+  } catch (error) {
+    console.error("Failed to send system notification", error);
+  }
+};
 
 // Mocking snapshots with simple callbacks
 const listeners: Record<string, ((data: any) => void)[]> = {};
 const notify = (key: string) => {
   if (listeners[key]) {
-    const data = getStorage(key);
-    listeners[key].forEach(callback => callback(data));
+    const parts = key.split('_');
+    const type = parts[0];
+    const id = parts[1];
+    
+    if (type === 'issues') {
+      fetch(`/api/projects/${id}/issues`)
+        .then(res => res.json())
+        .then(data => listeners[key].forEach(callback => callback(data)))
+        .catch(console.error);
+    } else if (type === 'projects') {
+      fetch(`/api/projects?userId=${id}`)
+        .then(res => res.json())
+        .then(data => listeners[key].forEach(callback => callback(data)))
+        .catch(console.error);
+    } else if (type === 'project') {
+      fetch(`/api/projects/${id}`)
+        .then(res => res.json())
+        .then(data => listeners[key].forEach(callback => callback(data)))
+        .catch(console.error);
+    } else if (type === 'messages') {
+      fetch(`/api/projects/${id}/messages`)
+        .then(res => res.json())
+        .then(data => listeners[key].forEach(callback => callback(data)))
+        .catch(console.error);
+    } else if (type === 'comments') {
+      fetch(`/api/issues/${id}/comments`)
+        .then(res => res.json())
+        .then(data => listeners[key].forEach(callback => callback(data)))
+        .catch(console.error);
+    } else if (type === 'timelogs') {
+      fetch(`/api/projects/${id}/timelogs`)
+        .then(res => res.json())
+        .then(data => listeners[key].forEach(callback => callback(data)))
+        .catch(console.error);
+    } else if (type === 'sprints') {
+      fetch(`/api/projects/${id}/sprints`)
+        .then(res => res.json())
+        .then(data => listeners[key].forEach(callback => callback(data)))
+        .catch(console.error);
+    } else if (type === 'activities') {
+      fetch(`/api/projects/${id}/activities`)
+        .then(res => res.json())
+        .then(data => listeners[key].forEach(callback => callback(data)))
+        .catch(console.error);
+    }
   }
 };
 
 export const activityService = {
   logActivity: async (activity: Partial<Activity>) => {
-    const activities = getStorage('activities');
     const newActivity = {
       ...activity,
       id: Math.random().toString(36).substr(2, 9),
       createdAt: new Date().toISOString(),
     };
-    activities.push(newActivity);
-    setStorage('activities', activities);
+    
+    try {
+      await fetch(`/api/projects/${activity.projectId}/activities`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newActivity)
+      });
+    } catch (e) {
+      console.error(e);
+    }
+
     notify(`activities_${activity.projectId}`);
     return newActivity;
   },
@@ -32,12 +97,16 @@ export const activityService = {
     if (!listeners[key]) listeners[key] = [];
     listeners[key].push(callback);
     
-    // Initial call
-    const activities = getStorage('activities')
-      .filter((a: any) => a.projectId === projectId)
-      .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-      .slice(0, limitCount);
-    callback(activities);
+    fetch(`/api/projects/${projectId}/activities`)
+      .then(res => res.json())
+      .then(data => {
+        const sorted = data.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        callback(sorted.slice(0, limitCount));
+      })
+      .catch(err => {
+        console.error(err);
+        callback([]);
+      });
     
     return () => {
       listeners[key] = listeners[key].filter(c => c !== callback);
@@ -51,8 +120,15 @@ export const issueService = {
     if (!listeners[key]) listeners[key] = [];
     listeners[key].push(callback);
     
-    const issues = getStorage('issues').filter((i: any) => i.projectId === projectId);
-    callback(issues);
+    fetch(`/api/projects/${projectId}/issues`)
+      .then(res => res.json())
+      .then(data => {
+        callback(data);
+      })
+      .catch(err => {
+        console.error(err);
+        callback([]);
+      });
     
     return () => {
       listeners[key] = listeners[key].filter(c => c !== callback);
@@ -60,8 +136,15 @@ export const issueService = {
   },
 
   createIssue: async (projectId: string, issue: Partial<Issue>) => {
-    const issues = getStorage('issues');
-    const projectIssues = issues.filter((i: any) => i.projectId === projectId);
+    let indexCount = 1;
+    try {
+      const issuesRes = await fetch(`/api/projects/${projectId}/issues`);
+      if (issuesRes.ok) {
+        const list = await issuesRes.json();
+        indexCount = list.length + 1;
+      }
+    } catch (e) {}
+
     const newIssue = {
       ...issue,
       id: Math.random().toString(36).substr(2, 9),
@@ -71,11 +154,19 @@ export const issueService = {
       order: issue.order || 0,
       type: issue.type || 'TASK',
       checklist: issue.checklist || [],
-      issueIndex: projectIssues.length + 1,
+      issueIndex: indexCount,
       sprintId: issue.sprintId || '',
     };
-    issues.push(newIssue);
-    setStorage('issues', issues);
+
+    const res = await fetch(`/api/projects/${projectId}/issues`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newIssue)
+    });
+
+    if (!res.ok) {
+      throw new Error("Failed to create issue in database");
+    }
     
     await activityService.logActivity({
       projectId,
@@ -85,35 +176,70 @@ export const issueService = {
       newValue: issue.title
     });
 
+    if (newIssue.assigneeId) {
+      await sendSystemNotification(
+        newIssue.assigneeId,
+        'New Task Assigned',
+        `You have been assigned a new task: ${newIssue.title}`
+      );
+    }
+
     notify(`issues_${projectId}`);
     return newIssue;
   },
 
   updateIssue: async (projectId: string, issueId: string, updates: Partial<Issue>, userId: string) => {
-    const issues = getStorage('issues');
-    const index = issues.findIndex((i: any) => i.id === issueId);
-    if (index !== -1) {
-      issues[index] = { ...issues[index], ...updates, updatedAt: new Date().toISOString() };
-      setStorage('issues', issues);
-      
-      if (updates.status) {
-        await activityService.logActivity({
-          projectId,
-          issueId,
-          userId,
-          type: 'STATUS_CHANGED',
-          newValue: updates.status
-        });
+    let oldAssignee = "";
+    try {
+      const issuesRes = await fetch(`/api/projects/${projectId}/issues`);
+      if (issuesRes.ok) {
+        const issues = await issuesRes.json();
+        const found = issues.find((i: any) => i.id === issueId);
+        if (found) oldAssignee = found.assigneeId || "";
       }
-      
-      notify(`issues_${projectId}`);
+    } catch (e) { console.error(e); }
+
+    await fetch(`/api/projects/${projectId}/issues/${issueId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...updates, updatedAt: new Date().toISOString() })
+    });
+    
+    if (updates.status) {
+      await activityService.logActivity({
+        projectId,
+        issueId,
+        userId,
+        type: 'STATUS_CHANGED',
+        newValue: updates.status
+      });
     }
+    
+    const newAssignee = updates.assigneeId;
+    if (newAssignee !== undefined && newAssignee !== oldAssignee && newAssignee !== '') {
+      try {
+        const issuesRes = await fetch(`/api/projects/${projectId}/issues`);
+        if (issuesRes.ok) {
+          const issues = await issuesRes.json();
+          const found = issues.find((i: any) => i.id === issueId);
+          if (found) {
+            await sendSystemNotification(
+              newAssignee,
+              'Task Assigned to You',
+              `Task "${found.title}" has been assigned to you by a teammate`
+            );
+          }
+        }
+      } catch (e) { console.error(e); }
+    }
+
+    notify(`issues_${projectId}`);
   },
 
   deleteIssue: async (projectId: string, issueId: string) => {
-    const issues = getStorage('issues');
-    const filtered = issues.filter((i: any) => i.id !== issueId);
-    setStorage('issues', filtered);
+    await fetch(`/api/projects/${projectId}/issues/${issueId}`, {
+      method: 'DELETE'
+    });
     notify(`issues_${projectId}`);
   },
 };
@@ -124,8 +250,15 @@ export const projectService = {
     if (!listeners[key]) listeners[key] = [];
     listeners[key].push(callback);
     
-    const projects = getStorage('projects').filter((p: any) => p.members.includes(userId));
-    callback(projects);
+    fetch(`/api/projects?userId=${userId}`)
+      .then(res => res.json())
+      .then(data => {
+        callback(data);
+      })
+      .catch(err => {
+        console.error(err);
+        callback([]);
+      });
     
     return () => {
       listeners[key] = listeners[key].filter(c => c !== callback);
@@ -133,17 +266,24 @@ export const projectService = {
   },
 
   createProject: async (project: Partial<Project>) => {
-    const projects = getStorage('projects');
     const newProject = {
       ...project,
       id: Math.random().toString(36).substr(2, 9),
       createdAt: new Date().toISOString(),
     };
-    projects.push(newProject);
-    setStorage('projects', projects);
+    
+    const res = await fetch('/api/projects', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newProject)
+    });
+
+    if (!res.ok) {
+      throw new Error("Failed to create project");
+    }
     
     // Notify all members
-    newProject.members.forEach((m: string) => notify(`projects_${m}`));
+    newProject.members?.forEach((m: string) => notify(`projects_${m}`));
     return newProject;
   },
 
@@ -152,8 +292,12 @@ export const projectService = {
     if (!listeners[key]) listeners[key] = [];
     listeners[key].push(callback);
     
-    const project = getStorage('projects').find((p: any) => p.id === projectId);
-    if (project) callback(project);
+    fetch(`/api/projects/${projectId}`)
+      .then(res => res.json())
+      .then(data => {
+        callback(data);
+      })
+      .catch(err => console.error(err));
     
     return () => {
       listeners[key] = listeners[key].filter(c => c !== callback);
@@ -161,24 +305,34 @@ export const projectService = {
   },
 
   updateProject: async (projectId: string, updates: Partial<Project>) => {
-    const projects = getStorage('projects');
-    const index = projects.findIndex((p: any) => p.id === projectId);
-    if (index !== -1) {
-      projects[index] = { ...projects[index], ...updates };
-      setStorage('projects', projects);
-      notify(`project_${projectId}`);
-      projects[index].members.forEach((m: string) => notify(`projects_${m}`));
+    await fetch(`/api/projects/${projectId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates)
+    });
+
+    notify(`project_${projectId}`);
+    
+    if (updates.members) {
+      updates.members.forEach((m: string) => notify(`projects_${m}`));
     }
   },
 
   deleteProject: async (projectId: string) => {
-    const projects = getStorage('projects');
-    const project = projects.find((p: any) => p.id === projectId);
-    const filtered = projects.filter((p: any) => p.id !== projectId);
-    setStorage('projects', filtered);
-    if (project) {
-       project.members.forEach((m: string) => notify(`projects_${m}`));
-    }
+    let members: string[] = [];
+    try {
+      const res = await fetch(`/api/projects/${projectId}`);
+      if (res.ok) {
+        const p = await res.json();
+        members = p.members || [];
+      }
+    } catch (e) {}
+
+    await fetch(`/api/projects/${projectId}`, {
+      method: 'DELETE'
+    });
+
+    members.forEach((m: string) => notify(`projects_${m}`));
   }
 };
 
@@ -188,8 +342,15 @@ export const chatService = {
     if (!listeners[key]) listeners[key] = [];
     listeners[key].push(callback);
     
-    const messages = getStorage('messages').filter((m: any) => m.projectId === projectId);
-    callback(messages);
+    fetch(`/api/projects/${projectId}/messages`)
+      .then(res => res.json())
+      .then(data => {
+        callback(data);
+      })
+      .catch(err => {
+        console.error(err);
+        callback([]);
+      });
     
     return () => {
       listeners[key] = listeners[key].filter(c => c !== callback);
@@ -197,15 +358,19 @@ export const chatService = {
   },
 
   sendMessage: async (projectId: string, message: Partial<Message>) => {
-    const messages = getStorage('messages');
     const newMessage = {
       ...message,
       id: Math.random().toString(36).substr(2, 9),
       projectId,
       createdAt: new Date().toISOString(),
     };
-    messages.push(newMessage);
-    setStorage('messages', messages);
+    
+    await fetch(`/api/projects/${projectId}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newMessage)
+    });
+
     notify(`messages_${projectId}`);
     return newMessage;
   }
@@ -213,9 +378,41 @@ export const chatService = {
 
 export const userService = {
   getUsers: async (userIds: string[]) => {
-    if (!userIds || !Array.isArray(userIds)) return [];
-    const profiles = JSON.parse(localStorage.getItem('local_profiles') || '{}');
-    return userIds.map(id => profiles[id]).filter(Boolean);
+    if (!userIds || !Array.isArray(userIds) || userIds.length === 0) return [];
+    try {
+      const res = await fetch('/api/auth/profiles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userIds })
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (err) {
+      console.error("Failed to get users profiles:", err);
+    }
+    return [];
+  },
+  createMember: async (displayName: string, email: string): Promise<User> => {
+    const res = await fetch('/api/auth/create-member', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ displayName, email })
+    });
+    if (!res.ok) {
+      const errorData = await res.json();
+      throw new Error(errorData.error || 'Failed to create member');
+    }
+    return await res.json();
+  },
+  deleteUser: async (uid: string): Promise<void> => {
+    const res = await fetch(`/api/auth/users/${uid}`, {
+      method: 'DELETE'
+    });
+    if (!res.ok) {
+      const errorData = await res.json();
+      throw new Error(errorData.error || 'Failed to delete user');
+    }
   }
 };
 
@@ -225,8 +422,15 @@ export const commentService = {
     if (!listeners[key]) listeners[key] = [];
     listeners[key].push(callback);
     
-    const comments = getStorage('comments').filter((c: any) => c.issueId === issueId);
-    callback(comments);
+    fetch(`/api/issues/${issueId}/comments`)
+      .then(res => res.json())
+      .then(data => {
+        callback(data);
+      })
+      .catch(err => {
+        console.error(err);
+        callback([]);
+      });
     
     return () => {
       listeners[key] = listeners[key].filter(c => c !== callback);
@@ -234,15 +438,18 @@ export const commentService = {
   },
 
   addComment: async (projectId: string, issueId: string, comment: Partial<Comment>) => {
-    const comments = getStorage('comments');
     const newComment = {
       ...comment,
       id: Math.random().toString(36).substr(2, 9),
       issueId,
       createdAt: new Date().toISOString(),
     };
-    comments.push(newComment);
-    setStorage('comments', comments);
+    
+    await fetch(`/api/issues/${issueId}/comments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newComment)
+    });
     
     await activityService.logActivity({
       projectId,
@@ -263,8 +470,15 @@ export const timeLogService = {
     if (!listeners[key]) listeners[key] = [];
     listeners[key].push(callback);
     
-    const logs = getStorage('timeLogs').filter((l: any) => l.projectId === projectId);
-    callback(logs);
+    fetch(`/api/projects/${projectId}/timelogs`)
+      .then(res => res.json())
+      .then(data => {
+        callback(data);
+      })
+      .catch(err => {
+        console.error(err);
+        callback([]);
+      });
     
     return () => {
       listeners[key] = listeners[key].filter(c => c !== callback);
@@ -272,27 +486,38 @@ export const timeLogService = {
   },
 
   logTime: async (projectId: string, log: Partial<TimeLog>) => {
-    const logs = getStorage('timeLogs');
     const newLog = {
       ...log,
       id: Math.random().toString(36).substr(2, 9),
       projectId,
       createdAt: new Date().toISOString(),
     } as TimeLog;
-    logs.push(newLog);
-    setStorage('timeLogs', logs);
     
-    // Also update elapsed time in the issue itself
-    const issues = getStorage('issues');
-    const index = issues.findIndex((i: any) => i.id === log.issueId);
-    if (index !== -1) {
-      const currentSpent = issues[index].timeSpent || 0;
-      issues[index].timeSpent = currentSpent + (log.timeSpent || 0);
-      issues[index].updatedAt = new Date().toISOString();
-      setStorage('issues', issues);
-      notify(`issues_${projectId}`);
+    await fetch(`/api/projects/${projectId}/timelogs`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newLog)
+    });
+    
+    try {
+      const issuesRes = await fetch(`/api/projects/${projectId}/issues`);
+      if (issuesRes.ok) {
+        const issues = await issuesRes.json();
+        const existing = issues.find((i: any) => i.id === log.issueId);
+        if (existing) {
+          const newSpent = (existing.timeSpent || 0) + (log.timeSpent || 0);
+          await fetch(`/api/projects/${projectId}/issues/${log.issueId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ timeSpent: newSpent, updatedAt: new Date().toISOString() })
+          });
+        }
+      }
+    } catch (err) {
+      console.error(err);
     }
 
+    notify(`issues_${projectId}`);
     notify(`timelogs_${projectId}`);
     return newLog;
   }
@@ -304,8 +529,15 @@ export const sprintService = {
     if (!listeners[key]) listeners[key] = [];
     listeners[key].push(callback);
     
-    const sprints = getStorage('sprints').filter((s: any) => s.projectId === projectId);
-    callback(sprints);
+    fetch(`/api/projects/${projectId}/sprints`)
+      .then(res => res.json())
+      .then(data => {
+        callback(data);
+      })
+      .catch(err => {
+        console.error(err);
+        callback([]);
+      });
     
     return () => {
       listeners[key] = listeners[key].filter(c => c !== callback);
@@ -313,7 +545,6 @@ export const sprintService = {
   },
 
   createSprint: async (projectId: string, name: string) => {
-    const sprints = getStorage('sprints');
     const newSprint: Sprint = {
       id: Math.random().toString(36).substr(2, 9),
       projectId,
@@ -321,59 +552,35 @@ export const sprintService = {
       status: 'PLANNING',
       createdAt: new Date().toISOString(),
     };
-    sprints.push(newSprint);
-    setStorage('sprints', sprints);
+    
+    await fetch(`/api/projects/${projectId}/sprints`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newSprint)
+    });
+
     notify(`sprints_${projectId}`);
     return newSprint;
   },
 
   startSprint: async (projectId: string, sprintId: string, durationWeeks: number) => {
-    const sprints = getStorage('sprints');
-    const index = sprints.findIndex((s: any) => s.id === sprintId);
-    if (index !== -1) {
-      // Complete other active sprints
-      sprints.forEach((s: any) => {
-        if (s.projectId === projectId && s.status === 'ACTIVE') {
-          s.status = 'COMPLETED';
-          s.endDate = new Date().toISOString();
-        }
-      });
-      
-      sprints[index].status = 'ACTIVE';
-      sprints[index].startDate = new Date().toISOString();
-      sprints[index].endDate = new Date(Date.now() + durationWeeks * 7 * 24 * 60 * 60 * 1000).toISOString();
-      
-      setStorage('sprints', sprints);
-      notify(`sprints_${projectId}`);
-      
-      // Update active sprint ID inside current project context issues
-      notify(`issues_${projectId}`);
-    }
+    await fetch(`/api/projects/${projectId}/sprints/${sprintId}/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ durationWeeks })
+    });
+    
+    notify(`sprints_${projectId}`);
+    notify(`issues_${projectId}`);
   },
 
   completeSprint: async (projectId: string, sprintId: string) => {
-    const sprints = getStorage('sprints');
-    const index = sprints.findIndex((s: any) => s.id === sprintId);
-    if (index !== -1) {
-      sprints[index].status = 'COMPLETED';
-      sprints[index].endDate = new Date().toISOString();
-      setStorage('sprints', sprints);
-      
-      // Move incomplete issues back to backlog
-      const issues = getStorage('issues');
-      let updated = false;
-      issues.forEach((i: any) => {
-        if (i.projectId === projectId && i.sprintId === sprintId && i.status !== 'DONE') {
-          i.sprintId = '';
-          updated = true;
-        }
-      });
-      if (updated) {
-        setStorage('issues', issues);
-        notify(`issues_${projectId}`);
-      }
-      
-      notify(`sprints_${projectId}`);
-    }
+    await fetch(`/api/projects/${projectId}/sprints/${sprintId}/complete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    
+    notify(`sprints_${projectId}`);
+    notify(`issues_${projectId}`);
   }
 };

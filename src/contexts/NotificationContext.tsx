@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, orderBy, limit, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, orderBy, limit, addDoc, serverTimestamp, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'sonner';
@@ -56,7 +56,12 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   }, [userProfile?.uid]);
 
   const markAsRead = async (id: string) => {
-    // Logic to mark as read in Firestore
+    try {
+      const docRef = doc(db, 'notifications', id);
+      await updateDoc(docRef, { read: true });
+    } catch (error) {
+      console.error("Failed to mark notification as read:", error);
+    }
   };
 
   const sendNotification = async (userId: string, title: string, message: string) => {

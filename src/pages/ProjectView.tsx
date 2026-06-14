@@ -2,10 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { issueService, projectService, userService, sprintService } from '../services/firebaseService';
-import { Issue, IssueStatus, Priority, Project, User, Sprint } from '../types';
+import { Issue, IssueStatus, Priority, Project, User, Sprint, IssueType } from '../types';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
-import { Clock } from 'lucide-react';
+import { Clock, Crown } from 'lucide-react';
 import { KanbanBoard } from '../components/KanbanBoard';
 import { IssueModal } from '../components/IssueModal';
 import { Button } from '../components/ui/button';
@@ -34,6 +34,7 @@ export const ProjectView: React.FC = () => {
   const [newMemberId, setNewMemberId] = useState('');
   
   const [newIssueTitle, setNewIssueTitle] = useState('');
+  const [newIssueType, setNewIssueType] = useState<IssueType>('TASK');
   const [newIssuePriority, setNewIssuePriority] = useState<Priority>('MEDIUM');
   const [newIssueAssignee, setNewIssueAssignee] = useState<string>('unassigned');
   const [allSystemUsers, setAllSystemUsers] = useState<User[]>([]);
@@ -68,20 +69,26 @@ export const ProjectView: React.FC = () => {
   const handleCreateIssue = async () => {
     if (!projectId || !userProfile || !newIssueTitle) return;
 
-    await issueService.createIssue(projectId, {
+    // Close modal instantly for snappy UI
+    setIsAddIssueOpen(false);
+
+    const issueData = {
       title: newIssueTitle,
+      type: newIssueType,
       priority: newIssuePriority,
-      status: 'TODO',
+      status: 'TODO' as IssueStatus,
       description: '',
       reporterId: userProfile.uid,
       assigneeId: newIssueAssignee === 'unassigned' ? '' : newIssueAssignee,
       order: issues.length,
-    });
+    };
 
     setNewIssueTitle('');
+    setNewIssueType('TASK');
     setNewIssuePriority('MEDIUM');
     setNewIssueAssignee('unassigned');
-    setIsAddIssueOpen(false);
+
+    await issueService.createIssue(projectId, issueData);
   };
 
   const handleIssueClick = (issue: Issue) => {
@@ -175,6 +182,20 @@ export const ProjectView: React.FC = () => {
                     placeholder="Short description of the task"
                     className="bg-gray-50/50 border-none shadow-sm h-10"
                   />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="type" className="text-xs font-bold text-gray-500 uppercase tracking-widest">Issue Type</Label>
+                  <Select value={newIssueType} onValueChange={(v) => setNewIssueType(v as IssueType)}>
+                    <SelectTrigger id="type" className="bg-gray-50/50 border-none shadow-sm h-10">
+                      <SelectValue placeholder="Select type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="TASK" className="text-blue-600 font-bold">Task</SelectItem>
+                      <SelectItem value="BUG" className="text-red-600 font-bold">Bug</SelectItem>
+                      <SelectItem value="FEATURE" className="text-green-600 font-bold">Feature</SelectItem>
+                      <SelectItem value="EPIC" className="text-purple-600 font-bold">Epic</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="priority" className="text-xs font-bold text-gray-500 uppercase tracking-widest">Priority</Label>
@@ -378,8 +399,7 @@ export const ProjectView: React.FC = () => {
                     </CardHeader>
                     <CardContent className="p-2 space-y-1 bg-white">
                       {sprintIssues.map(issue => (
-                        <div 
-                          key={issue.id} 
+                        <div key={issue.id} 
                           onClick={() => handleIssueClick(issue)}
                           className="flex items-center justify-between p-2 rounded-md hover:bg-gray-50 border border-transparent hover:border-gray-200 cursor-pointer text-xs transition-colors"
                         >
@@ -389,6 +409,19 @@ export const ProjectView: React.FC = () => {
                             </span>
                             <span className="text-gray-400 font-bold uppercase text-[9px] font-mono">[{issue.type || 'TASK'}]</span>
                             <span className="font-semibold text-gray-700 text-xs truncate">{issue.title}</span>
+                            {/* Coordinator badge */}
+                            {(() => {
+                              const coord = members.find(m => m.uid === issue.reporterId);
+                              return coord ? (
+                                <span
+                                  title={`Coordinator: ${coord.displayName}`}
+                                  className="hidden sm:flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-600 text-[8px] font-bold uppercase tracking-wide shrink-0"
+                                >
+                                  <Crown size={8} />
+                                  {coord.displayName.split(' ')[0]}
+                                </span>
+                              ) : null;
+                            })()}
                           </div>
                           
                           <div className="flex items-center gap-3" onClick={e => e.stopPropagation()}>
@@ -441,6 +474,19 @@ export const ProjectView: React.FC = () => {
                       </span>
                       <span className="text-gray-400 font-bold uppercase text-[9px] font-mono">[{issue.type || 'TASK'}]</span>
                       <span className="font-semibold text-gray-700 text-xs truncate">{issue.title}</span>
+                      {/* Coordinator badge */}
+                      {(() => {
+                        const coord = members.find(m => m.uid === issue.reporterId);
+                        return coord ? (
+                          <span
+                            title={`Coordinator: ${coord.displayName}`}
+                            className="hidden sm:flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-600 text-[8px] font-bold uppercase tracking-wide shrink-0"
+                          >
+                            <Crown size={8} />
+                            {coord.displayName.split(' ')[0]}
+                          </span>
+                        ) : null;
+                      })()}
                     </div>
                     
                     <div className="flex items-center gap-3" onClick={e => e.stopPropagation()}>

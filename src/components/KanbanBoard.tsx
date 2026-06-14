@@ -262,6 +262,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId, issues, onI
                               issue={issue} 
                               onClick={() => onIssueClick?.(issue)}
                               assignee={members.find(m => m.uid === issue.assigneeId)}
+                              coordinator={members.find(m => m.uid === issue.reporterId)}
                               projectKey={projectKey}
                             />
                           ))}
@@ -319,6 +320,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId, issues, onI
                                     issue={issue} 
                                     onClick={() => onIssueClick?.(issue)}
                                     assignee={members.find(m => m.uid === issue.assigneeId)}
+                                    coordinator={members.find(m => m.uid === issue.reporterId)}
                                     projectKey={projectKey}
                                   />
                                 ))}
@@ -351,6 +353,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId, issues, onI
                           issue={issue} 
                           onClick={() => onIssueClick?.(issue)}
                           assignee={members.find(m => m.uid === issue.assigneeId)}
+                          coordinator={members.find(m => m.uid === issue.reporterId)}
                           projectKey={projectKey}
                           showStatus
                         />

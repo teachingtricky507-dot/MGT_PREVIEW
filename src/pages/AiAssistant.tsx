@@ -234,9 +234,9 @@ export const AiAssistant: React.FC = () => {
         <div className="flex items-center gap-2">
           <Bot className="w-5 h-5 text-blue-600 animate-pulse" />
           <div className="h-[1px] w-4 bg-gray-300" />
-          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest text-[#0052CC]">Emergent Chatti</span>
+          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest text-[#0052CC]">MGT Chatti</span>
         </div>
-        <h1 className="text-4xl font-bold tracking-tight text-[#172B4D]">Emergent Chatti</h1>
+        <h1 className="text-4xl font-bold tracking-tight text-[#172B4D]">MGT Chatti</h1>
         <p className="text-gray-500 font-medium">Your context-aware AI assistant with a full overview of issues, priorities, and workloads.</p>
       </div>
 
@@ -326,7 +326,7 @@ export const AiAssistant: React.FC = () => {
             <Input
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask Emergent Chatti about tasks, estimates, standup status, or roadmaps..."
+              placeholder="Ask MGT Chatti about tasks, estimates, standup status, or roadmaps..."
               className="flex-1 h-12 bg-gray-50 border-none shadow-inner rounded-xl text-sm"
               disabled={isLoading}
             />

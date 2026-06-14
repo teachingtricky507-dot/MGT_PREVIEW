@@ -1,11 +1,14 @@
 import React from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { projectService } from '../services/firebaseService';
+import { Project } from '../types';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard, 
   Settings, 
   LogOut, 
   Menu, 
+  X,
   Users,
   Search,
   Bell,
@@ -22,6 +25,7 @@ import {
 import { useTheme } from 'next-themes';
 import { Button } from './ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
+import { Badge } from './ui/badge';
 import { useNotifications } from '../contexts/NotificationContext';
 import {
   DropdownMenu,
@@ -39,8 +43,17 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   const { userProfile, logout } = useAuth();
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
   const { theme, setTheme } = useTheme();
-  const { unreadCount } = useNotifications();
+  const { unreadCount, notifications, markAsRead } = useNotifications();
   const location = useLocation();
+  const [projects, setProjects] = React.useState<Project[]>([]);
+
+  React.useEffect(() => {
+    if (!userProfile) return;
+    const unsub = projectService.subscribeToProjects(userProfile.uid, (projs) => {
+      setProjects(projs);
+    });
+    return () => unsub();
+  }, [userProfile]);
 
   const handleLogout = () => {
     logout();
@@ -49,7 +62,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   const navItems = [
     { name: 'Dashboard', icon: LayoutDashboard, path: '/' },
     { name: 'Timesheets', icon: Clock, path: '/timesheets' },
-    { name: 'Emergent Chatti', icon: Bot, path: '/chatbot' },
+    { name: 'MGT Chatti', icon: Bot, path: '/chatbot' },
     { name: 'Members', icon: Users, path: '/members' },
     { name: 'Settings', icon: Settings, path: '/settings' },
   ];
@@ -102,9 +115,15 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                 <div className="w-6 h-6 bg-white rounded-md flex items-center justify-center">
                   <Command size={14} className="text-[#171717]" />
                 </div>
-                <span className="font-bold text-sm tracking-tight text-gray-200">Emergent</span>
+                <span className="font-bold text-sm tracking-tight text-gray-200">MGT</span>
               </div>
-              <button className="p-1 hover:bg-white/10 rounded-md transition-colors text-gray-400">
+              <button 
+                onClick={() => setIsSidebarOpen(false)}
+                className="md:hidden p-1 hover:bg-white/10 rounded-md transition-colors text-gray-400 cursor-pointer animate-fade-in"
+              >
+                <X size={16} />
+              </button>
+              <button className="hidden md:block p-1 hover:bg-white/10 rounded-md transition-colors text-gray-400">
                 <Plus size={14} />
               </button>
             </div>
@@ -126,20 +145,25 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                 </Link>
               ))}
 
-              <div className="pt-6 pb-2 px-2.5">
-                 <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Favorite Projects</span>
+              <div className="pt-6 pb-2 px-2.5 flex items-center justify-between">
+                 <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Your Projects</span>
+                 <Plus size={12} className="text-gray-500 cursor-pointer hover:text-white" onClick={() => document.getElementById('new-project-btn')?.click()} />
               </div>
 
-              <Link
-                  to="/"
+              {projects.length > 0 ? projects.map(proj => (
+                <Link
+                  key={proj.id}
+                  to={`/project/${proj.id}`}
                   className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-gray-400 hover:bg-white/5 hover:text-white group"
                 >
-                  <div className="w-4 h-4 bg-blue-500/20 border border-blue-500/30 rounded flex items-center justify-center">
+                  <div className="w-4 h-4 bg-blue-500/20 border border-blue-500/30 rounded flex items-center justify-center shrink-0">
                     <div className="w-1.5 h-1.5 bg-blue-500 rounded-sm" />
                   </div>
-                  <span className="text-sm font-medium">Internal Web</span>
-                  <Star size={12} className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity text-orange-400 fill-orange-400" />
+                  <span className="text-sm font-medium truncate">{proj.name}</span>
                 </Link>
+              )) : (
+                <div className="px-3 py-2 text-xs text-gray-500 italic">No projects yet</div>
+              )}
             </nav>
 
             {/* Profile Footer */}
@@ -188,10 +212,10 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
               <Menu size={18} />
             </button>
             <div className="h-4 w-px bg-gray-200 hidden sm:block" />
-            <div className="hidden sm:flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-gray-400">
-               <span>Projects</span>
-               <span className="text-gray-200">/</span>
-               <span className="text-gray-900">{navItems.find((item) => item.path === location.pathname)?.name || 'Project'}</span>
+            <div className="flex items-center gap-2 text-[10px] sm:text-xs font-bold uppercase tracking-widest text-gray-400">
+               <span className="hidden xs:inline">Projects</span>
+               <span className="text-gray-200 dark:text-gray-700 hidden xs:inline">/</span>
+               <span className="text-gray-900 dark:text-gray-100">{navItems.find((item) => item.path === location.pathname)?.name || 'Project'}</span>
             </div>
           </div>
 
@@ -212,14 +236,50 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
               {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
             </button>
 
-            <button className="p-1.5 hover:bg-muted rounded-md transition-colors text-muted-foreground relative">
-              <Bell size={18} />
-              {unreadCount > 0 && (
-                <div className="absolute top-1 right-1 w-4 h-4 bg-red-500 rounded-full ring-2 ring-background flex items-center justify-center">
-                  <span className="text-[8px] font-bold text-white">{unreadCount}</span>
-                </div>
-              )}
-            </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <button className="p-1.5 hover:bg-muted rounded-md transition-colors text-muted-foreground relative cursor-pointer outline-none">
+                    <Bell size={18} />
+                    {unreadCount > 0 && (
+                      <div className="absolute top-1 right-1 w-4 h-4 bg-red-500 rounded-full ring-2 ring-background flex items-center justify-center">
+                        <span className="text-[8px] font-bold text-white">{unreadCount}</span>
+                      </div>
+                    )}
+                  </button>
+                }
+              />
+              <DropdownMenuContent align="end" className="w-80 bg-[#1A1A1A] border-[#262626] text-gray-200 shadow-2xl p-2 max-h-[350px] overflow-y-auto custom-scrollbar">
+                <DropdownMenuLabel className="text-xs font-bold text-gray-400 uppercase tracking-widest px-2 py-1 flex items-center justify-between">
+                  <span>Notifications</span>
+                  <Badge className="bg-white/10 text-white border-none font-bold text-[9px] hover:bg-white/10 shrink-0">{unreadCount} Unread</Badge>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator className="bg-white/5" />
+                {notifications.length === 0 ? (
+                  <p className="text-xs text-gray-500 text-center py-6 italic">No notifications yet</p>
+                ) : (
+                  notifications.map((notif) => (
+                    <DropdownMenuItem
+                      key={notif.id}
+                      onClick={() => markAsRead(notif.id)}
+                      className={`flex flex-col items-start gap-1 p-2.5 rounded-md cursor-pointer transition-colors text-left focus:bg-white/5 focus:text-white ${
+                        !notif.read ? 'bg-white/5 hover:bg-white/10' : 'hover:bg-white/5 opacity-60'
+                      }`}
+                    >
+                      <div className="flex justify-between w-full gap-2">
+                        <span className={`text-xs font-bold ${!notif.read ? 'text-blue-400' : 'text-gray-300'}`}>
+                          {notif.title}
+                        </span>
+                        {!notif.read && (
+                          <span className="w-1.5 h-1.5 bg-blue-500 rounded-full mt-1.5 shrink-0 animate-pulse" />
+                        )}
+                      </div>
+                      <p className="text-[11px] text-gray-400 leading-tight">{notif.message}</p>
+                    </DropdownMenuItem>
+                  ))
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </header>
 

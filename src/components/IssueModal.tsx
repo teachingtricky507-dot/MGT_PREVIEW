@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Issue, Comment, Priority, IssueStatus, IssueType, ChecklistItem, Sprint } from '../types';
-import { commentService, issueService, sprintService } from '../services/firebaseService';
+import { commentService, issueService, sprintService, timeLogService } from '../services/firebaseService';
 import { useAuth } from '../contexts/AuthContext';
 import { useNotifications } from '../contexts/NotificationContext';
 import { Label } from './ui/label';
@@ -18,7 +18,7 @@ import { Badge } from './ui/badge';
 import { Separator } from './ui/separator';
 import { ScrollArea } from './ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
-import { MessageSquare, Clock, Shield, Trash2, Send, Calendar, Sparkles, Loader2, Play, Square, Paperclip, FileIcon, X, Plus } from 'lucide-react';
+import { MessageSquare, Clock, Shield, Trash2, Send, Calendar, Sparkles, Loader2, Play, Square, Paperclip, FileIcon, X, Plus, Crown } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { User, Project } from '../types';
 import { aiService } from '../services/aiService';
@@ -64,6 +64,13 @@ export const IssueModal: React.FC<IssueModalProps> = ({ issue, isOpen, onClose, 
   const [newSubtaskText, setNewSubtaskText] = useState('');
   const [isDecomposingAI, setIsDecomposingAI] = useState(false);
   const [sprints, setSprints] = useState<Sprint[]>([]);
+  
+  // Optimistic UI state
+  const [localStatus, setLocalStatus] = useState<IssueStatus>(issue?.status || 'TODO');
+  const [localPriority, setLocalPriority] = useState<Priority>(issue?.priority || 'MEDIUM');
+  const [localType, setLocalType] = useState<IssueType>(issue?.type || 'TASK');
+  const [localAssigneeId, setLocalAssigneeId] = useState<string>(issue?.assigneeId || 'unassigned');
+  const [localDueDate, setLocalDueDate] = useState<string>(issue?.dueDate || '');
 
   useEffect(() => {
     if (issue && isOpen) {
@@ -77,7 +84,15 @@ export const IssueModal: React.FC<IssueModalProps> = ({ issue, isOpen, onClose, 
       };
     }
   }, [issue, isOpen]);
-
+  useEffect(() => {
+    if (issue) {
+      setLocalStatus(issue.status);
+      setLocalPriority(issue.priority);
+      setLocalType(issue.type || 'TASK');
+      setLocalAssigneeId(issue.assigneeId || 'unassigned');
+      setLocalDueDate(issue.dueDate || '');
+    }
+  }, [issue]);
   useEffect(() => {
     let interval: any;
     if (isTimerRunning) {
@@ -90,30 +105,51 @@ export const IssueModal: React.FC<IssueModalProps> = ({ issue, isOpen, onClose, 
 
   if (!issue) return null;
 
+  const SUPER_ADMIN_EMAIL = 'deepeshkumarbarway@gmail.com';
+  const isSuperAdmin = userProfile?.email === SUPER_ADMIN_EMAIL;
+  const isProjectOwner = project?.ownerId === userProfile?.uid;
+  const isCoordinator = userProfile?.uid === issue.reporterId;
+  const canEdit = isCoordinator || isProjectOwner || isSuperAdmin;
+  // Assignees can also change status (normal workflow)
+  const canChangeStatus = canEdit || userProfile?.uid === issue.assigneeId;
+
+  // Find coordinator user from members (fallback to localStorage profiles)
+  const coordinator: User | undefined = (() => {
+    const fromMembers = members.find(m => m.uid === issue.reporterId);
+    if (fromMembers) return fromMembers;
+    const profiles = JSON.parse(localStorage.getItem('local_profiles') || '{}');
+    return profiles[issue.reporterId] as User | undefined;
+  })();
+
   const handleStatusChange = async (status: IssueStatus) => {
-    if (!userProfile) return;
+    if (!userProfile || !canChangeStatus) return;
+    setLocalStatus(status);
     await issueService.updateIssue(issue.projectId, issue.id, { status }, userProfile.uid);
   };
 
   const handlePriorityChange = async (priority: Priority) => {
-    if (!userProfile) return;
+    if (!userProfile || !canEdit) return;
+    setLocalPriority(priority);
     await issueService.updateIssue(issue.projectId, issue.id, { priority }, userProfile.uid);
   };
 
   const handleAssigneeChange = async (assigneeId: string) => {
-    if (!userProfile) return;
+    if (!userProfile || !canEdit) return;
+    setLocalAssigneeId(assigneeId);
     await issueService.updateIssue(issue.projectId, issue.id, { 
       assigneeId: assigneeId === 'unassigned' ? '' : assigneeId 
     }, userProfile.uid);
   };
 
   const handleDueDateChange = async (dueDate: string) => {
-    if (!userProfile) return;
+    if (!userProfile || !canEdit) return;
+    setLocalDueDate(dueDate);
     await issueService.updateIssue(issue.projectId, issue.id, { dueDate }, userProfile.uid);
   };
 
   const handleTypeChange = async (type: IssueType) => {
-    if (!userProfile) return;
+    if (!userProfile || !canEdit) return;
+    setLocalType(type);
     await issueService.updateIssue(issue.projectId, issue.id, { type }, userProfile.uid);
   };
 
@@ -173,8 +209,23 @@ export const IssueModal: React.FC<IssueModalProps> = ({ issue, isOpen, onClose, 
     if (!userProfile) return;
     if (isTimerRunning) {
       setIsTimerRunning(false);
+      const sessionMinutes = elapsedTime - (issue.timeSpent || 0);
+      
+      // Update cumulative time on the issue
       await issueService.updateIssue(issue.projectId, issue.id, { timeSpent: elapsedTime }, userProfile.uid);
-      toast.success(`Logged ${elapsedTime} minutes`);
+      
+      // Also log it for the Timesheets page if there's any time spent
+      if (sessionMinutes > 0) {
+        await timeLogService.logTime(issue.projectId, {
+          issueId: issue.id,
+          userId: userProfile.uid,
+          timeSpent: sessionMinutes,
+          description: 'Logged via Issue Timer',
+          date: new Date().toISOString().split('T')[0],
+        });
+      }
+      
+      toast.success(`Logged ${sessionMinutes > 0 ? sessionMinutes : elapsedTime} minutes`);
     } else {
       setIsTimerRunning(true);
       toast.info('Timer started');
@@ -213,18 +264,19 @@ export const IssueModal: React.FC<IssueModalProps> = ({ issue, isOpen, onClose, 
   };
 
   const handleSaveDescription = async () => {
-    if (!userProfile) return;
+    if (!userProfile || !canEdit) return;
     await issueService.updateIssue(issue.projectId, issue.id, { description }, userProfile.uid);
     setIsEditingDescription(false);
   };
 
   const handleSaveTitle = async () => {
-    if (!userProfile || !title.trim()) return;
+    if (!userProfile || !canEdit || !title.trim()) return;
     await issueService.updateIssue(issue.projectId, issue.id, { title }, userProfile.uid);
     setIsEditingTitle(false);
   };
 
   const handleDeleteIssue = async () => {
+    if (!canEdit) return;
     if (confirm('Are you sure you want to delete this issue?')) {
       await issueService.deleteIssue(issue.projectId, issue.id);
       onClose();
@@ -283,16 +335,23 @@ export const IssueModal: React.FC<IssueModalProps> = ({ issue, isOpen, onClose, 
     }
   };
 
-  const assignee = members.find(m => m.uid === issue.assigneeId);
+  const activeAssigneeId = localAssigneeId === 'unassigned' ? '' : localAssigneeId;
+  const assignee = members.find(m => m.uid === activeAssigneeId);
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl w-[95vw] sm:w-full h-[90vh] sm:h-[85vh] flex flex-col p-0 overflow-hidden bg-white">
+      <DialogContent className="max-w-4xl w-[95vw] sm:w-full h-[90vh] sm:h-[85vh] flex flex-col p-0 overflow-hidden bg-white dark:bg-[#1A1A1A] dark:border-[#262626] dark:text-gray-200">
         <DialogHeader className="p-6 pb-2 shrink-0">
           <div className="flex items-center gap-2 text-xs text-gray-500 uppercase tracking-widest mb-2">
             <span className="font-bold text-[#0052CC]">{project?.key || 'PROJ'}-{issue.issueIndex || 1}</span>
             <span>/</span>
             <span>{project?.name}</span>
+            {isCoordinator && (
+              <span className="ml-2 flex items-center gap-1 bg-amber-50 border border-amber-200 text-amber-600 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-widest">
+                <Crown size={9} />
+                You are Coordinator
+              </span>
+            )}
           </div>
           {isEditingTitle ? (
             <div className="flex gap-2 items-center">
@@ -307,8 +366,10 @@ export const IssueModal: React.FC<IssueModalProps> = ({ issue, isOpen, onClose, 
             </div>
           ) : (
             <DialogTitle 
-              className="text-xl font-bold text-[#172B4D] leading-tight mb-2 hover:bg-gray-100 p-1 rounded cursor-text transition-colors"
-              onClick={() => setIsEditingTitle(true)}
+              className={`text-xl font-bold text-[#172B4D] dark:text-gray-100 leading-tight mb-2 p-1 rounded transition-colors ${
+                canEdit ? 'hover:bg-gray-100 dark:hover:bg-white/5 cursor-text' : 'cursor-default'
+              }`}
+              onClick={() => canEdit && setIsEditingTitle(true)}
             >
               {issue.title}
             </DialogTitle>
@@ -349,8 +410,10 @@ export const IssueModal: React.FC<IssueModalProps> = ({ issue, isOpen, onClose, 
                   </div>
                 ) : (
                   <div 
-                    onClick={() => setIsEditingDescription(true)}
-                    className="p-3 rounded hover:bg-gray-100 cursor-pointer min-h-[100px] transition-colors text-sm text-gray-700 whitespace-pre-wrap"
+                    onClick={() => canEdit && setIsEditingDescription(true)}
+                    className={`p-3 rounded min-h-[100px] transition-colors text-sm text-gray-700 whitespace-pre-wrap ${
+                      canEdit ? 'hover:bg-gray-100 cursor-pointer' : 'cursor-default'
+                    }`}
                   >
                     {issue.description || <span className="text-gray-400 italic">Add a description...</span>}
                   </div>
@@ -560,12 +623,38 @@ export const IssueModal: React.FC<IssueModalProps> = ({ issue, isOpen, onClose, 
           </div>
 
           {/* Sidebar Info */}
-          <div className="w-full md:w-80 border-t md:border-t-0 md:border-l bg-[#F4F5F7]/50 p-4 md:p-6 space-y-6 shrink-0 md:shrink-0 overflow-y-auto custom-scrollbar">
+          <div className="w-full md:w-80 border-t md:border-t-0 md:border-l dark:border-[#262626] bg-[#F4F5F7]/50 dark:bg-black/20 p-4 md:p-6 space-y-6 shrink-0 md:shrink-0 overflow-y-auto custom-scrollbar">
             <div className="space-y-4">
+              {/* Coordinator Section */}
+              <div className="p-3 rounded-lg bg-amber-50 border border-amber-100">
+                <Label className="text-[10px] font-bold text-amber-600 uppercase tracking-widest mb-2 flex items-center gap-1">
+                  <Crown size={10} />
+                  Task Coordinator
+                </Label>
+                <div className="flex items-center gap-2 mt-1.5">
+                  <Avatar className="w-7 h-7 ring-2 ring-amber-300">
+                    <AvatarImage src={coordinator?.photoURL} />
+                    <AvatarFallback className="bg-amber-100 text-amber-700 text-xs font-bold">
+                      {coordinator?.displayName?.charAt(0) || 'C'}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <p className="text-xs font-bold text-amber-800">{coordinator?.displayName || 'Unknown'}</p>
+                    <p className="text-[9px] text-amber-500 font-medium">Task Creator & Owner</p>
+                  </div>
+                </div>
+                {!canEdit && (
+                  <p className="text-[9px] text-amber-600 mt-2 flex items-center gap-1">
+                    <Shield size={9} />
+                    View only — only the coordinator can edit
+                  </p>
+                )}
+              </div>
+
               <div>
                 <Label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5 block">Status</Label>
-                <Select value={issue.status} onValueChange={(v) => handleStatusChange(v as IssueStatus)}>
-                  <SelectTrigger className="bg-white border-gray-200 uppercase text-xs font-bold w-full">
+                <Select value={localStatus} onValueChange={(v) => handleStatusChange(v as IssueStatus)} disabled={!canChangeStatus}>
+                  <SelectTrigger className="bg-white dark:bg-[#262626] border-gray-200 dark:border-[#333] uppercase text-xs font-bold w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -579,8 +668,8 @@ export const IssueModal: React.FC<IssueModalProps> = ({ issue, isOpen, onClose, 
 
               <div>
                 <Label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5 block">Issue Type</Label>
-                <Select value={issue.type || 'TASK'} onValueChange={(v) => handleTypeChange(v as IssueType)}>
-                  <SelectTrigger className="bg-white border-gray-200 uppercase text-xs font-bold w-full">
+                <Select value={localType} onValueChange={(v) => handleTypeChange(v as IssueType)} disabled={!canEdit}>
+                  <SelectTrigger className="bg-white dark:bg-[#262626] border-gray-200 dark:border-[#333] uppercase text-xs font-bold w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -604,8 +693,8 @@ export const IssueModal: React.FC<IssueModalProps> = ({ issue, isOpen, onClose, 
                     AI SUGGEST
                   </button>
                 </div>
-                <Select value={issue.priority} onValueChange={(v) => handlePriorityChange(v as Priority)}>
-                  <SelectTrigger className="bg-white border-gray-200 uppercase text-xs font-bold w-full">
+                <Select value={localPriority} onValueChange={(v) => handlePriorityChange(v as Priority)} disabled={!canEdit}>
+                  <SelectTrigger className="bg-white dark:bg-[#262626] border-gray-200 dark:border-[#333] uppercase text-xs font-bold w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -619,8 +708,8 @@ export const IssueModal: React.FC<IssueModalProps> = ({ issue, isOpen, onClose, 
 
               <div>
                 <Label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5 block">Assignee</Label>
-                <Select value={issue.assigneeId || 'unassigned'} onValueChange={handleAssigneeChange}>
-                  <SelectTrigger className="bg-white border-gray-200 w-full text-sm">
+                <Select value={localAssigneeId} onValueChange={handleAssigneeChange} disabled={!canEdit}>
+                  <SelectTrigger className="bg-white dark:bg-[#262626] border-gray-200 dark:border-[#333] w-full text-sm">
                     <div className="flex items-center gap-2">
                        <Avatar className="w-5 h-5">
                           <AvatarImage src={assignee?.photoURL} />
@@ -645,7 +734,7 @@ export const IssueModal: React.FC<IssueModalProps> = ({ issue, isOpen, onClose, 
               <div>
                 <Label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5 block">Sprint</Label>
                 <Select value={issue.sprintId || 'backlog'} onValueChange={handleSprintChange}>
-                  <SelectTrigger className="bg-white border-gray-200 w-full text-xs font-bold">
+                  <SelectTrigger className="bg-white dark:bg-[#262626] border-gray-200 dark:border-[#333] w-full text-xs font-bold">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -659,7 +748,7 @@ export const IssueModal: React.FC<IssueModalProps> = ({ issue, isOpen, onClose, 
 
               <div>
                 <Label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5 block">Time Tracking</Label>
-                <div className="bg-white border border-gray-200 rounded-md p-3 space-y-3">
+                <div className="bg-white dark:bg-[#262626] border border-gray-200 dark:border-[#333] rounded-md p-3 space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                        <Clock size={14} className={isTimerRunning ? "text-blue-500 animate-pulse" : "text-gray-400"} />
@@ -696,9 +785,10 @@ export const IssueModal: React.FC<IssueModalProps> = ({ issue, isOpen, onClose, 
                   <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                   <Input 
                     type="date" 
-                    className="pl-9 bg-white border-gray-200 text-sm h-10 w-full" 
-                    value={issue.dueDate || ''}
+                    className="pl-9 bg-white dark:bg-[#262626] border-gray-200 dark:border-[#333] text-sm h-10 w-full" 
+                    value={localDueDate}
                     onChange={(e) => handleDueDateChange(e.target.value)}
+                    disabled={!canEdit}
                   />
                 </div>
               </div>
@@ -718,15 +808,17 @@ export const IssueModal: React.FC<IssueModalProps> = ({ issue, isOpen, onClose, 
             </div>
             
             <div className="pt-6 border-t font-sans">
-              <Button 
-                variant="ghost" 
-                className="w-full justify-start text-destructive hover:text-white hover:bg-destructive/90 px-2" 
-                size="sm"
-                onClick={handleDeleteIssue}
-              >
-                <Trash2 size={16} className="mr-2" />
-                Delete Issue
-              </Button>
+              {canEdit && (
+                <Button 
+                  variant="ghost" 
+                  className="w-full justify-start text-destructive hover:text-white hover:bg-destructive/90 px-2" 
+                  size="sm"
+                  onClick={handleDeleteIssue}
+                >
+                  <Trash2 size={16} className="mr-2" />
+                  Delete Issue
+                </Button>
+              )}
             </div>
           </div>
         </div>

@@ -14,6 +14,7 @@ export interface User {
   displayName: string;
   photoURL?: string;
   createdAt: string;
+  emailVerified?: boolean;
 }
 
 export interface Project {

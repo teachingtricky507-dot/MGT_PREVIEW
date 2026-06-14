@@ -12,7 +12,17 @@ export const Settings: React.FC = () => {
   const { userProfile, updateProfile } = useAuth();
   const [copied, setCopied] = React.useState(false);
   const [name, setName] = React.useState(userProfile?.displayName || '');
+  const [photoInput, setPhotoInput] = React.useState('');
   const [isSaving, setIsSaving] = React.useState(false);
+
+  const getProcessedPhotoUrl = (input: string) => {
+    if (!input) return userProfile?.photoURL || '';
+    if (input.startsWith('http') || input.startsWith('data:')) return input;
+    if (Array.from(input).length <= 2) {
+      return `data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">${encodeURIComponent(input)}</text></svg>`;
+    }
+    return `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(input)}`;
+  };
 
   // AI API Credentials State
   const [geminiKey1, setGeminiKey1] = React.useState(localStorage.getItem('gemini_api_key') || '');
@@ -34,7 +44,7 @@ export const Settings: React.FC = () => {
     if (!name.trim()) return;
     setIsSaving(true);
     try {
-      await updateProfile(name);
+      await updateProfile(name, photoInput ? getProcessedPhotoUrl(photoInput) : undefined);
       localStorage.setItem('gemini_api_key', geminiKey1);
       localStorage.setItem('gemini_api_key_2', geminiKey2);
       localStorage.setItem('gemini_api_key_3', geminiKey3);
@@ -50,6 +60,7 @@ export const Settings: React.FC = () => {
 
   const hasChanges = 
     name !== userProfile?.displayName ||
+    photoInput !== '' ||
     geminiKey1 !== (localStorage.getItem('gemini_api_key') || '') ||
     geminiKey2 !== (localStorage.getItem('gemini_api_key_2') || '') ||
     geminiKey3 !== (localStorage.getItem('gemini_api_key_3') || '') ||
@@ -80,13 +91,22 @@ export const Settings: React.FC = () => {
         <CardContent className="space-y-6">
           <div className="flex items-center gap-4">
             <Avatar className="w-16 h-16">
-              <AvatarImage src={userProfile?.photoURL} />
+              <AvatarImage src={photoInput ? getProcessedPhotoUrl(photoInput) : userProfile?.photoURL} />
               <AvatarFallback className="bg-[#0747A6] text-white text-xl">
                 {userProfile?.displayName.charAt(0)}
               </AvatarFallback>
             </Avatar>
-            <div>
-              <Button variant="outline" size="sm" disabled>Change photo (Local Only)</Button>
+            <div className="flex-1 max-w-sm">
+              <Label htmlFor="photo" className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-1 block">
+                Avatar (Emoji / Word / URL)
+              </Label>
+              <Input 
+                id="photo" 
+                value={photoInput} 
+                onChange={(e) => setPhotoInput(e.target.value)}
+                placeholder="Type an emoji (😎) or any word"
+                className="bg-gray-50/50 shadow-sm"
+              />
             </div>
           </div>
 
